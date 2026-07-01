@@ -14,10 +14,12 @@ interface DebateStreamProps {
 }
 
 /**
- * Agents per phase — must match engine/live_debate.py `_AGENTS`. If the
- * agent roster changes upstream, update both. The progress strip uses
- * this to compute "done X of Y" per phase without having to know
- * individual agent names.
+ * Free-engine fallback roster — matches engine/live_debate.py `_AGENTS`
+ * (fixed single-pass debate: 4 analysts, 3 researchers, 1 trader, 4 risk).
+ * Used ONLY when the stream carries no `graph.plan` event, i.e. the free
+ * simplified engine. The Pro full-graph engine emits `graph.plan` and its
+ * per-phase totals are derived from that instead (analyst selection is
+ * user-chosen and the debate loops run multiple rounds).
  */
 const AGENTS_PER_PHASE: Record<string, number> = {
   analysts: 4,
@@ -28,7 +30,24 @@ const AGENTS_PER_PHASE: Record<string, number> = {
 
 const PHASE_ORDER: string[] = ['analysts', 'researchers', 'trader', 'risk'];
 
-const TOTAL_AGENTS = Object.values(AGENTS_PER_PHASE).reduce((a, b) => a + b, 0);
+/** Wire agent name -> phase, for attributing `agent.activity` (which carries
+ * no phase field) to the right phase so a tool-looping analyst can light up
+ * the Analysts phase before its first finished message lands. Covers the full
+ * Pro roster; agents not present here simply don't move the active marker. */
+const AGENT_PHASE: Record<string, string> = {
+  technical_analyst: 'analysts',
+  sentiment_analyst: 'analysts',
+  news_analyst: 'analysts',
+  fundamental_analyst: 'analysts',
+  bull_researcher: 'researchers',
+  bear_researcher: 'researchers',
+  research_manager: 'researchers',
+  trader: 'trader',
+  risk_aggressive: 'risk',
+  risk_conservative: 'risk',
+  risk_neutral: 'risk',
+  portfolio_manager: 'risk',
+};
 
 interface PhaseProgress {
   phase: string;
@@ -38,19 +57,61 @@ interface PhaseProgress {
 }
 
 /**
+ * Per-phase totals for the run. When a `graph.plan` event is present (Pro
+ * full-graph engine) totals are derived from it: the analysts total is the
+ * count of selected analysts, and the researcher/risk loops run
+ * `2*max_debate_rounds+1` (bull+bear per round, then the research manager) and
+ * `3*max_risk_rounds+1` (aggressive+conservative+neutral per round, then the
+ * portfolio manager). With no plan (free engine) we fall back to the fixed
+ * 4/3/1/4 roster. Verified against a live rounds=1 Pro run (researchers 3,
+ * risk 4) and unit-tested for rounds=2 (researchers 5, risk 7).
+ */
+export function derivePhaseTotals(events: DebateEvent[]): {
+  totals: Record<string, number>;
+  totalAgents: number;
+} {
+  const plan = events.find((e) => e.type === 'graph.plan');
+  // WS events are unchecked `as DebateEvent`, so a malformed/version-skewed
+  // graph.plan (missing rounds, non-array analysts) would otherwise yield NaN
+  // totals ("0/NaN"). Validate the fields; degrade to the fixed roster if bad.
+  if (
+    plan &&
+    plan.type === 'graph.plan' &&
+    Array.isArray(plan.analysts) &&
+    Number.isFinite(plan.max_debate_rounds) &&
+    Number.isFinite(plan.max_risk_rounds)
+  ) {
+    const totals: Record<string, number> = {
+      analysts: plan.analysts.length,
+      researchers: 2 * plan.max_debate_rounds + 1,
+      trader: 1,
+      risk: 3 * plan.max_risk_rounds + 1,
+    };
+    const totalAgents = PHASE_ORDER.reduce((sum, p) => sum + (totals[p] ?? 0), 0);
+    return { totals, totalAgents };
+  }
+  const totalAgents = Object.values(AGENTS_PER_PHASE).reduce((a, b) => a + b, 0);
+  return { totals: AGENTS_PER_PHASE, totalAgents };
+}
+
+/**
  * Walk the event stream and compute per-phase + aggregate progress.
  *
- * - `done` count = agent.message events seen in that phase.
+ * - `done` count = agent.message events seen in that phase (multi-round Pro
+ *   runs accumulate naturally; each finished turn is one message).
+ * - `total` per phase comes from `derivePhaseTotals` (plan-aware).
  * - A phase is `done` once `done >= total`.
- * - The most recently active phase (latest agent.message or
- *   phase.transition target) is marked `active`; everything else
- *   pending. Backward-walking ensures a stalled phase doesn't keep
- *   showing "active" after the stream moved on.
+ * - The most recently active phase (latest agent.message, phase.transition
+ *   target, or agent.activity attributed via AGENT_PHASE) is marked `active`;
+ *   everything else pending. Walking forward and keeping the last wins ensures
+ *   a stalled phase doesn't keep showing "active" after the stream moved on.
  */
-function computeProgress(events: DebateEvent[]): {
+export function computeProgress(events: DebateEvent[]): {
   phases: PhaseProgress[];
   totalDone: number;
+  totalAgents: number;
 } {
+  const { totals, totalAgents } = derivePhaseTotals(events);
   const counts: Record<string, number> = {};
   let lastActivePhase: string | null = null;
 
@@ -60,20 +121,25 @@ function computeProgress(events: DebateEvent[]): {
       lastActivePhase = ev.phase;
     } else if (ev.type === 'phase.transition') {
       lastActivePhase = ev.to;
+    } else if (ev.type === 'agent.activity') {
+      const phase = AGENT_PHASE[ev.agent];
+      if (phase) lastActivePhase = phase;
     }
   }
 
   const phases: PhaseProgress[] = PHASE_ORDER.map((phase) => {
     const done = counts[phase] ?? 0;
-    const total = AGENTS_PER_PHASE[phase] ?? 0;
+    const total = totals[phase] ?? 0;
     let state: 'pending' | 'active' | 'done' = 'pending';
+    // `done >= total` also marks a zero-total phase done (nothing to do), e.g.
+    // a Pro plan with zero selected analysts — it should not sit 'pending'.
     if (done >= total) state = 'done';
     else if (lastActivePhase === phase || done > 0) state = 'active';
     return { phase, done, total, state };
   });
 
   const totalDone = phases.reduce((sum, p) => sum + p.done, 0);
-  return { phases, totalDone };
+  return { phases, totalDone, totalAgents };
 }
 
 /** Format elapsed milliseconds for the live clock. Compact: "12s",
@@ -130,21 +196,21 @@ function formatVolume(n: number): string {
 
 interface PhaseGroup {
   phase: string;
-  messages: Array<{ agent: string; content: string }>;
+  messages: Array<{ agent: string; content: string; round?: number }>;
 }
 
 function groupByPhase(events: DebateEvent[]): PhaseGroup[] {
   const groups: PhaseGroup[] = [];
   for (const ev of events) {
     if (ev.type !== 'agent.message') continue;
+    // `round` is Pro-only (researcher/risk loops); undefined on the free
+    // engine and on single-turn phases, in which case no label renders.
+    const msg = { agent: ev.agent, content: ev.content, round: ev.round };
     const last = groups[groups.length - 1];
     if (last && last.phase === ev.phase) {
-      last.messages.push({ agent: ev.agent, content: ev.content });
+      last.messages.push(msg);
     } else {
-      groups.push({
-        phase: ev.phase,
-        messages: [{ agent: ev.agent, content: ev.content }],
-      });
+      groups.push({ phase: ev.phase, messages: [msg] });
     }
   }
   return groups;
@@ -202,6 +268,35 @@ function findDecisionMeta(events: DebateEvent[]): DecisionMeta {
   return { live: false };
 }
 
+/** Pro-only terminal states. A run can stop without a session.complete:
+ * `run.token_cap` (budget stop, expected) or `run.error` (node failure).
+ * The WS still closes cleanly on these, so DebateStream detects the event
+ * to render a stopped/error notice in place of the decision card rather than
+ * ending the transcript silently. Kind distinguishes the two so the copy and
+ * styling read as "stopped" vs "failed". */
+interface TerminalState {
+  kind: 'token_cap' | 'error';
+  message: string;
+}
+
+function findTerminal(events: DebateEvent[]): TerminalState | null {
+  for (const ev of events) {
+    if (ev.type === 'run.token_cap') {
+      return {
+        kind: 'token_cap',
+        message:
+          ev.cap != null
+            ? `Analysis stopped: token cap of ${ev.cap.toLocaleString()} reached (used ${ev.used.toLocaleString()}).`
+            : `Analysis stopped: token cap reached (used ${ev.used.toLocaleString()}).`,
+      };
+    }
+    if (ev.type === 'run.error') {
+      return { kind: 'error', message: ev.error };
+    }
+  }
+  return null;
+}
+
 const PHASE_LABEL: Record<string, string> = {
   analysts: 'Analysts',
   researchers: 'Researchers',
@@ -225,6 +320,10 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const meta = findDecisionMeta(events);
   const progress = computeProgress(events);
   const webhookReport = findWebhookReport(events);
+  // Only surface a terminal notice when the run stopped WITHOUT a decision;
+  // a completed run that also happened to emit a late cost event should show
+  // its decision card, not a stop notice.
+  const terminal = decision ? null : findTerminal(events);
 
   // Live elapsed clock — captured on first event arrival, frozen when
   // session.complete lands. For History replay (events present from the
@@ -359,7 +458,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
         </div>
         <div className={styles.progressFooter}>
           <span>
-            {progress.totalDone} of {TOTAL_AGENTS} agents
+            {progress.totalDone} of {progress.totalAgents} agents
           </span>
           {elapsedMs !== null && (
             <>
@@ -424,7 +523,12 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           <div className={styles.messages}>
             {group.messages.map((msg, idx) => (
               <article key={`${msg.agent}-${idx}`} className={styles.message}>
-                <div className={styles.messageAgent}>{msg.agent}</div>
+                <div className={styles.messageAgent}>
+                  {msg.agent}
+                  {msg.round != null && msg.round > 0 && (
+                    <span className={styles.messageRound}> · round {msg.round}</span>
+                  )}
+                </div>
                 <div className={styles.messageContent}>{msg.content}</div>
               </article>
             ))}
@@ -473,6 +577,26 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           <div className={styles.decisionDisclaimer}>
             Not investment advice · LLM output may be inaccurate · Verify
             independently before any action
+          </div>
+        </div>
+      )}
+
+      {terminal && (
+        <div
+          className={`${styles.decision} ${
+            terminal.kind === 'token_cap' ? styles.terminalStop : styles.terminalError
+          }`}
+          data-testid="terminal-notice"
+          data-terminal={terminal.kind}
+        >
+          <div className={styles.decisionLabel}>
+            {terminal.kind === 'token_cap' ? 'Analysis stopped' : 'Analysis failed'}
+          </div>
+          <div className={styles.decisionReasoning}>{terminal.message}</div>
+          <div className={styles.decisionDisclaimer}>
+            {terminal.kind === 'token_cap'
+              ? 'The token cap is a safety backstop. Raise it in Settings to allow a longer run.'
+              : 'No decision was produced. Check the engine logs or try again.'}
           </div>
         </div>
       )}

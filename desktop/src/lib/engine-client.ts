@@ -272,6 +272,21 @@ export interface DataConfig {
   secret: string;
 }
 
+/** Pro-only run knobs (Trading Agents Lab Pro). Ignored unless `engine`
+ * selects the full-graph path. The deep/quick split, debate round counts,
+ * reasoning effort, analyst selection, and an optional hard token cap map
+ * onto the upstream library config the engine's full_debate adapter builds.
+ * Populated by the Pro Settings surface (P3); the free app never sends it. */
+export interface ProConfig {
+  deep_think_llm?: string;
+  quick_think_llm?: string;
+  max_debate_rounds?: number;
+  max_risk_discuss_rounds?: number;
+  effort?: string;
+  selected_analysts?: string[];
+  token_cap?: number;
+}
+
 export interface AnalyzeRequest {
   ticker: string;
   trade_date: string;
@@ -281,6 +296,12 @@ export interface AnalyzeRequest {
    * debate, the engine auto-reserves with override=false and may block
    * with a `cost.blocked` event. */
   reservation_id?: string;
+  /** Engine selector. `'full'`/`'pro'` routes to the real LangGraph graph
+   * (Pro); absent runs the free simplified engine. The free renderer never
+   * sets this, so the free path is unaffected. */
+  engine?: 'full' | 'pro';
+  /** Pro-only knobs; ignored unless `engine` selects the Pro path. */
+  pro_config?: ProConfig;
   /** Optional per-stream data provider override (e.g. Alpaca). Engine
    * falls through to yfinance default when absent. */
   data_config?: DataConfig;
@@ -297,6 +318,14 @@ export interface AnalyzeDecision {
   action: 'BUY' | 'SELL' | 'HOLD' | string;
   confidence: number;
   reasoning: string;
+  /** Pro-only richer fields from the real Portfolio Manager. The free
+   * engine leaves these undefined; the Pro full-graph adapter fills them
+   * from the PM's 5-tier rating output. Optional so the free path's
+   * `{action, confidence, reasoning}` shape stays valid. */
+  rating?: string | null;
+  investment_thesis?: string | null;
+  price_target?: number | null;
+  time_horizon?: string | null;
 }
 
 export interface SessionCompleteEvent {
@@ -313,6 +342,13 @@ export interface SessionCompleteEvent {
   input_tokens?: number;
   output_tokens?: number;
   estimated_cost_usd?: number;
+  /** Pro-only: `'full'` marks the real LangGraph engine; the free engine
+   * omits it. `deep_model`/`quick_model` expose the two-model split and
+   * `auth_kind` the credential flow used. */
+  engine?: 'full' | string;
+  deep_model?: string;
+  quick_model?: string;
+  auth_kind?: string;
 }
 
 export type AssetClass = 'equity' | 'crypto';
@@ -380,15 +416,73 @@ export interface CostUsageEvent {
   free: boolean;
 }
 
+/** Pro-only: emitted once right after session.start. Lets the UI derive
+ * honest per-phase totals for the deterministic phases instead of assuming
+ * the free engine's fixed 4/3/1/4 roster. `analysts` is the selected list
+ * (its length is the analysts-phase total); researcher/risk totals are
+ * derived from the round counts. The free engine does not emit this, which
+ * is exactly how DebateStream distinguishes the two progress models. */
+export interface GraphPlanEvent {
+  type: 'graph.plan';
+  analysts: string[];
+  max_debate_rounds: number;
+  max_risk_rounds: number;
+  deep_model?: string;
+  quick_model?: string;
+}
+
+/** Pro-only: a lightweight "this node is working" signal (e.g. an analyst
+ * mid tool-loop). Not a finished transcript turn, so it is never counted
+ * toward progress; it only lets the UI light up the active phase before the
+ * first agent.message of that phase lands. */
+export interface AgentActivityEvent {
+  type: 'agent.activity';
+  agent: string;
+  node?: string;
+  status: string;
+}
+
+/** Pro-only terminal event: the run hit the hard token cap and was stopped.
+ * A budget stop, NOT a failure: the WS still closes cleanly (1000), so the
+ * UI must detect this event to surface the stopped state (no session.complete
+ * follows). */
+export interface RunTokenCapEvent {
+  type: 'run.token_cap';
+  used: number;
+  cap: number | null;
+  message: string;
+}
+
+/** Pro-only terminal event: a node raised and the run could not complete.
+ * Like run.token_cap, the WS may still close cleanly, so the UI detects this
+ * event rather than relying on the socket close code. */
+export interface RunErrorEvent {
+  type: 'run.error';
+  error: string;
+}
+
 export type DebateEvent =
   | { type: 'session.start'; ticker: string; trade_date: string }
   | ({ type: 'data.summary' } & QuoteSummary)
   | NewsHeadlinesEvent
-  | { type: 'agent.message'; agent: string; phase: string; content: string }
+  | GraphPlanEvent
+  | {
+      type: 'agent.message';
+      agent: string;
+      phase: string;
+      content: string;
+      /** Pro-only: 1-based debate round for the researcher/risk loops. */
+      round?: number;
+      /** Pro-only: the raw graph node name (diagnostic; not user-facing). */
+      node?: string;
+    }
+  | AgentActivityEvent
   | { type: 'phase.transition'; from: string; to: string }
   | CostUsageEvent
   | SessionCompleteEvent
   | CostBlockedEvent
+  | RunTokenCapEvent
+  | RunErrorEvent
   | import('./webhooks').WebhookReportEvent;
 
 export interface StreamHandle {
@@ -914,6 +1008,11 @@ export async function streamDebate(
         data_config: req.data_config,
         webhooks: req.webhooks,
         telegram_chat_ids: req.telegram_chat_ids,
+        // Pro engine selector + knobs. Undefined for the free app (the
+        // engine treats absent `engine` as the free path), so this is
+        // inert until the Pro Settings surface populates them.
+        engine: req.engine,
+        pro_config: req.pro_config,
       }),
     );
   });

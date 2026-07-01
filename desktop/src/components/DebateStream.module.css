@@ -271,6 +271,14 @@ a.newsTitle:hover {
   color: var(--tal-text-muted);
 }
 
+/* Pro-only round tag next to the agent name in multi-round researcher/risk
+   turns. Dimmer than the agent name so it reads as secondary metadata. */
+.messageRound {
+  color: var(--tal-text-faint, var(--tal-text-muted));
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .messageContent {
   font-family: var(--tal-font-mono);
   font-size: var(--tal-text-sm);
@@ -291,6 +299,17 @@ a.newsTitle:hover {
   row-gap: var(--tal-space-2);
   box-shadow: var(--tal-shadow-md);
   animation: slide-in 240ms var(--tal-ease-out);
+}
+
+/* Pro terminal-notice tones. token_cap is a recoverable budget stop (neutral
+   accent border, matching the default card); run.error is a genuine failure
+   (red/negative border) so the two read differently at a glance. */
+.terminalStop {
+  border-color: var(--tal-accent-border);
+}
+
+.terminalError {
+  border-color: var(--tal-negative);
 }
 
 .decisionLabel {
