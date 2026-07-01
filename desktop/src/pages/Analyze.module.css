@@ -1,0 +1,342 @@
+.page {
+  max-width: 960px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-6);
+}
+
+/* Stacked vertically: title block on top, then provider selector below
+ * the subtitle. Earlier flex-row + wrap behavior was inconsistent —
+ * short model descriptions (Anthropic "Sonnet 4.6 — Balanced") fit
+ * beside the title and squeezed the subtitle into a narrow column;
+ * long ones (OpenAI "gpt-5.4 — Strong model for everyday coding")
+ * wrapped below cleanly. Founder wanted the always-below layout that
+ * the OpenAI case showed naturally — forcing `flex-direction: column`
+ * makes it deterministic regardless of model description length. */
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tal-space-3);
+}
+
+.pageHeaderTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.pageHeaderProvider {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  margin: 0;
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tal-text-primary);
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--tal-text-secondary);
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+  max-width: 60ch;
+}
+
+.card {
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-4);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: var(--tal-space-4);
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.fieldButton {
+  display: flex;
+  align-items: end;
+}
+
+.label {
+  font-size: var(--tal-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+}
+
+.input {
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-base);
+  transition: border-color var(--tal-duration-fast) var(--tal-ease-out);
+  outline: none;
+}
+
+.input:focus {
+  border-color: var(--tal-accent-border);
+  box-shadow: 0 0 0 3px var(--tal-accent-muted);
+}
+
+.button {
+  background: var(--tal-accent);
+  color: var(--tal-text-inverse);
+  border: none;
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-3) var(--tal-space-6);
+  font-weight: 600;
+  font-size: var(--tal-text-sm);
+  letter-spacing: 0.02em;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              transform var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--tal-accent-strong);
+  transform: translateY(-1px);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.buttonStop {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+  border: 1px solid var(--tal-border-default);
+}
+
+.buttonStop:hover {
+  background: var(--tal-bg-elevated);
+  border-color: var(--tal-negative);
+  color: var(--tal-negative);
+  transform: translateY(-1px);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+}
+
+/* Provider selector lives on the top-right of the page header now (less
+ * prominent — one-time setup, not a recurring form field). */
+.providerLabel {
+  font-size: var(--tal-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+}
+
+.providerSelect {
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-1) var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--tal-duration-fast) var(--tal-ease-out);
+  min-width: 240px;
+}
+
+.providerSelect:focus {
+  border-color: var(--tal-accent-border);
+  box-shadow: 0 0 0 3px var(--tal-accent-muted);
+}
+
+.providerSelect:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.providerReset {
+  background: transparent;
+  color: var(--tal-text-muted);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: 2px var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.providerReset:hover:not(:disabled) {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+}
+
+.providerReset:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.transcriptButton {
+  background: transparent;
+  color: var(--tal-text-secondary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-4);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              color var(--tal-duration-fast) var(--tal-ease-out),
+              border-color var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.transcriptButton:hover {
+  background: var(--tal-accent-muted);
+  color: var(--tal-accent-strong);
+  border-color: var(--tal-accent-border);
+}
+
+.helper {
+  margin: 0;
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--tal-space-3);
+}
+
+.statusCard {
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.statusLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tal-text-muted);
+}
+
+.statusValue {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-size: var(--tal-text-base);
+  color: var(--tal-text-primary);
+  font-weight: 500;
+}
+
+.statusDotPending {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tal-text-muted);
+  box-shadow: 0 0 0 3px rgba(110, 118, 129, 0.15);
+}
+
+.statusDotOk {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tal-positive);
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18);
+}
+
+.statusDotError {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tal-negative);
+  box-shadow: 0 0 0 3px rgba(248, 81, 73, 0.18);
+}
+
+.errorBanner {
+  margin: 0;
+  padding: var(--tal-space-3) var(--tal-space-4);
+  border-radius: var(--tal-radius-md);
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  color: var(--tal-negative);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+}
+
+.statusHint {
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+}
+
+.disclaimer {
+  background: var(--tal-bg-overlay);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-4) var(--tal-space-5);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-secondary);
+  line-height: 1.6;
+}
+
+.disclaimer strong {
+  color: var(--tal-text-primary);
+  font-weight: 600;
+}
+
+.engineErrorBanner {
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-negative, #f85149);
+  line-height: 1.5;
+  margin-bottom: var(--tal-space-3);
+}
+
+.engineErrorBanner strong {
+  color: var(--tal-negative, #f85149);
+  font-weight: 600;
+}

@@ -1,0 +1,648 @@
+.page {
+  max-width: 1080px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-6);
+}
+
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.pageTitle {
+  margin: 0;
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--tal-text-primary);
+}
+
+.pageSubtitle {
+  margin: 0;
+  color: var(--tal-text-secondary);
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+  max-width: 60ch;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--tal-space-6);
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-1);
+}
+
+.tab {
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--tal-text-secondary);
+  font-size: var(--tal-text-sm);
+  font-weight: 500;
+  font-family: var(--tal-font-sans);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  border-radius: var(--tal-radius-md);
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              color var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.tab:hover {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+}
+
+.tabActive,
+.tabActive:hover {
+  background: var(--tal-accent-muted);
+  color: var(--tal-accent-strong);
+  border-color: var(--tal-accent-border);
+}
+
+.panel {
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-5);
+}
+
+.panelHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-1);
+}
+
+.panelTitle {
+  margin: 0;
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-xl);
+  font-weight: 600;
+  color: var(--tal-text-primary);
+}
+
+.panelDescription {
+  margin: 0;
+  color: var(--tal-text-secondary);
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-4);
+  padding: var(--tal-space-4);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-bg-overlay);
+}
+
+.rowMain {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-1);
+  min-width: 0;
+}
+
+.rowName {
+  color: var(--tal-text-primary);
+  font-weight: 600;
+  font-size: var(--tal-text-base);
+}
+
+.rowNote {
+  color: var(--tal-text-muted);
+  font-size: var(--tal-text-xs);
+  font-family: var(--tal-font-mono);
+  line-height: 1.5;
+}
+
+.rowAside {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-3);
+}
+
+.pill {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--tal-border-default);
+  color: var(--tal-text-secondary);
+}
+
+.pill_default {
+  color: var(--tal-accent);
+  background: var(--tal-accent-muted);
+  border-color: var(--tal-accent-border);
+}
+
+.pill_optional {
+  color: var(--tal-text-secondary);
+  background: var(--tal-bg-base);
+}
+
+/* Active connection / "this is wired and working" — green, matches the
+ * green status dots on the Analyze page. Use for any pill that confirms
+ * a live connection (OAuth connected, default data provider serving, etc).
+ */
+.pill_success {
+  color: var(--tal-positive);
+  background: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.4);
+}
+
+.pill_planned {
+  color: var(--tal-negative);
+  background: rgba(248, 81, 73, 0.08);
+  border-color: rgba(248, 81, 73, 0.3);
+}
+
+.rowAction {
+  background: transparent;
+  color: var(--tal-text-secondary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-4);
+  font-family: var(--tal-font-sans);
+  font-size: var(--tal-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.rowAction:hover:not(:disabled) {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+}
+
+.rowAction:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-4);
+  padding: var(--tal-space-4);
+  border: 1px dashed var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-bg-overlay);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.label {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.input {
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  outline: none;
+}
+
+.input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.helper {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  line-height: 1.5;
+}
+
+.aboutList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+  margin: 0;
+}
+
+.aboutRow {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--tal-space-4);
+}
+
+.aboutKey {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.aboutValue {
+  margin: 0;
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-primary);
+  line-height: 1.5;
+}
+
+.code {
+  display: inline-block;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary);
+  background: var(--tal-bg-base);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-sm);
+  padding: 2px 6px;
+  word-break: break-all;
+}
+
+.aboutHint {
+  margin-top: var(--tal-space-1);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+}
+
+.availabilityBanner {
+  background: rgba(248, 81, 73, 0.08);
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-primary);
+  line-height: 1.5;
+}
+
+.availabilityBanner strong {
+  color: var(--tal-negative);
+  margin-right: var(--tal-space-2);
+}
+
+.rowMeta {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+  margin-top: var(--tal-space-1);
+}
+
+.hint {
+  color: var(--tal-text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+  margin-top: var(--tal-space-3);
+  padding: var(--tal-space-3);
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-bg-base);
+  border: 1px solid var(--tal-border-subtle);
+}
+
+.editorActions {
+  display: flex;
+  gap: var(--tal-space-2);
+}
+
+.actionPrimary {
+  background: var(--tal-accent);
+  color: var(--tal-text-inverse);
+  border: none;
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-4);
+  font-weight: 600;
+  font-size: var(--tal-text-sm);
+  cursor: pointer;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.actionPrimary:hover:not(:disabled) {
+  background: var(--tal-accent-strong);
+}
+
+.actionPrimary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.actionGhost {
+  background: transparent;
+  color: var(--tal-text-secondary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-4);
+  font-size: var(--tal-text-sm);
+  cursor: pointer;
+}
+
+.actionGhost:hover:not(:disabled) {
+  background: var(--tal-bg-overlay);
+  color: var(--tal-text-primary);
+}
+
+.editorError {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-negative);
+}
+
+.rowActionDanger {
+  background: transparent;
+  color: var(--tal-text-secondary);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  font-family: var(--tal-font-sans);
+  font-size: var(--tal-text-sm);
+  cursor: pointer;
+}
+
+.rowActionDanger:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.08);
+  border-color: rgba(248, 81, 73, 0.4);
+  color: var(--tal-negative);
+}
+
+.rowActionDanger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.staticRow {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-4);
+  padding: var(--tal-space-4);
+  border: 1px dashed var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-bg-overlay);
+}
+
+.link {
+  color: var(--tal-accent);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--tal-accent-border);
+}
+
+.link:hover {
+  color: var(--tal-accent-strong);
+}
+
+.phaseGuard {
+  margin: 0;
+  padding: var(--tal-space-3) var(--tal-space-4);
+  background: var(--tal-bg-overlay);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  line-height: 1.5;
+}
+
+/* ---- Cost Guard tab --------------------------------------------------- */
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+  padding: var(--tal-space-3) 0;
+  border-top: 1px solid var(--tal-border-subtle);
+}
+
+.formGroup:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.formGroup:disabled {
+  opacity: 0.5;
+}
+
+.formLegend {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  padding: 0;
+  margin-bottom: var(--tal-space-1);
+}
+
+.formHint {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.formError {
+  color: #f85149;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  margin: 0;
+}
+
+.formSuccess {
+  color: #2ea043;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  margin: 0;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--tal-space-3);
+  padding-top: var(--tal-space-3);
+  border-top: 1px solid var(--tal-border-subtle);
+}
+
+.formSave {
+  background: var(--tal-accent);
+  border: 1px solid var(--tal-accent);
+  color: var(--tal-bg-base);
+  padding: var(--tal-space-2) var(--tal-space-5);
+  border-radius: var(--tal-radius-md);
+  font-family: inherit;
+  font-size: var(--tal-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 80px;
+  transition: background 0.12s ease;
+}
+
+.formSave:hover:not(:disabled) {
+  background: var(--tal-accent-bright, #ffba3c);
+}
+
+.formSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--tal-space-3);
+  cursor: pointer;
+  font-size: var(--tal-text-sm);
+}
+
+.toggleRow input[type='checkbox'] {
+  margin-top: 4px;
+  cursor: pointer;
+}
+
+.costInputRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-1);
+}
+
+.costInputLabel {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  align-items: center;
+  gap: var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary, var(--tal-text-primary));
+}
+
+.costInputField {
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  outline: none;
+  width: 140px;
+}
+
+.costInputField:focus {
+  border-color: var(--tal-accent);
+}
+
+.spendRow {
+  display: grid;
+  grid-template-columns: 110px 1fr 130px;
+  align-items: center;
+  gap: var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+}
+
+.spendLabel {
+  color: var(--tal-text-muted);
+}
+
+.spendProgress {
+  height: 6px;
+  background: var(--tal-bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.spendBar {
+  height: 100%;
+  background: #2ea043;
+  transition: width 0.2s ease;
+}
+
+.spendBar_warn {
+  background: var(--tal-accent);
+}
+
+.spendBar_over {
+  background: #f85149;
+}
+
+.spendValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--tal-text-primary);
+}
+
+.refreshLink {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-top: var(--tal-space-2);
+  color: var(--tal-accent);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.refreshLink:hover {
+  color: var(--tal-accent-bright, #ffba3c);
+}
+
+/* Webhooks tab */
+.webhooksToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--tal-space-3);
+}
+
+.webhooksCheckboxes {
+  display: flex;
+  gap: var(--tal-space-4);
+}
+
+.webhooksCheckboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-primary);
+  cursor: pointer;
+}

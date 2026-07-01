@@ -1,0 +1,52 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--tal-bg-base);
+  color: var(--tal-text-primary);
+  font-family: var(--tal-font-sans);
+  font-size: var(--tal-text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Subtle gradient background */
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(240, 168, 48, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(240, 168, 48, 0.02) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+::selection {
+  background: var(--tal-accent-muted);
+  color: var(--tal-text-primary);
+}
+
+/* Drag region for the title bar — needed when titleBarStyle is hiddenInset */
+.app-drag-region {
+  -webkit-app-region: drag;
+}
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

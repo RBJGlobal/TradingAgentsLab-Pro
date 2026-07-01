@@ -1,0 +1,80 @@
+/*
+ * TradingAgentsLab — design tokens
+ *
+ * Independent of Clawless. Brand-level coherence with the Clawless ecosystem
+ * is achieved through compatible aesthetics (dark surface, clean typography),
+ * not shared CSS variables.
+ *
+ * Accent: warm amber. Distinct from Clawless cyan, complementary on the color
+ * wheel, evokes "trading floor" without being green/red gain-loss-coded.
+ */
+:root {
+  /* Surfaces */
+  --tal-bg-base:        #0d1117;
+  --tal-bg-elevated:    #161b22;
+  --tal-bg-overlay:     #1c232c;
+  --tal-bg-input:       #0a0d12;
+
+  /* Borders */
+  --tal-border-subtle:  #21262d;
+  --tal-border-default: #30363d;
+  --tal-border-strong:  #484f58;
+
+  /* Text */
+  --tal-text-primary:   #e6edf3;
+  --tal-text-secondary: #9ea7b3;
+  --tal-text-muted:     #6e7681;
+  --tal-text-inverse:   #0d1117;
+
+  /* Accent — warm amber */
+  --tal-accent:         #f0a830;
+  --tal-accent-strong:  #ffb74d;
+  --tal-accent-muted:   rgba(240, 168, 48, 0.15);
+  --tal-accent-border:  rgba(240, 168, 48, 0.4);
+
+  /* Semantic — gain/loss (used sparingly, not the brand color) */
+  --tal-positive:       #3fb950;
+  --tal-negative:       #f85149;
+  --tal-neutral:        var(--tal-text-secondary);
+
+  /* Shadows */
+  --tal-shadow-sm:      0 1px 2px rgba(0, 0, 0, 0.3);
+  --tal-shadow-md:      0 4px 12px rgba(0, 0, 0, 0.4);
+  --tal-shadow-lg:      0 12px 32px rgba(0, 0, 0, 0.5);
+
+  /* Typography */
+  --tal-font-sans:      ui-sans-serif, -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+  --tal-font-mono:      ui-monospace, "JetBrains Mono", "SF Mono", "Cascadia Code", "Menlo", monospace;
+  --tal-font-display:   var(--tal-font-mono);
+
+  --tal-text-xs:   0.75rem;
+  --tal-text-sm:   0.875rem;
+  --tal-text-base: 1rem;
+  --tal-text-lg:   1.125rem;
+  --tal-text-xl:   1.25rem;
+  --tal-text-2xl:  1.5rem;
+  --tal-text-3xl:  1.875rem;
+  --tal-text-4xl:  2.25rem;
+
+  /* Spacing scale */
+  --tal-space-1: 0.25rem;
+  --tal-space-2: 0.5rem;
+  --tal-space-3: 0.75rem;
+  --tal-space-4: 1rem;
+  --tal-space-5: 1.25rem;
+  --tal-space-6: 1.5rem;
+  --tal-space-8: 2rem;
+  --tal-space-12: 3rem;
+  --tal-space-16: 4rem;
+
+  /* Radius */
+  --tal-radius-sm: 4px;
+  --tal-radius-md: 6px;
+  --tal-radius-lg: 10px;
+  --tal-radius-xl: 16px;
+
+  /* Motion */
+  --tal-ease-out:     cubic-bezier(0.16, 1, 0.3, 1);
+  --tal-duration-fast: 120ms;
+  --tal-duration-base: 200ms;
+}

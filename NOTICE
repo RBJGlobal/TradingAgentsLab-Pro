@@ -1,0 +1,71 @@
+TradingAgentsLab Pro
+Copyright 2026 RBJ Global LLC
+
+This product is a proprietary derivative work based on TradingAgents:
+  TradingAgents
+  Copyright 2024-2026 Tauric Research
+  https://github.com/TauricResearch/TradingAgents
+  Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE)
+
+================================================================================
+
+LICENSING SUMMARY
+================================================================================
+
+TradingAgentsLab Pro is proprietary software. The Software as a whole, and all
+original code, modifications, and additions authored by RBJ Global LLC
+(including but not limited to the desktop UI, the full-engine integration, and
+other enhancements), are licensed under the Trading Agents Lab Pro End User
+License Agreement (see LICENSE). They are NOT open-source and may not be
+redistributed.
+
+The original TradingAgents source code incorporated in this product remains
+licensed under the Apache License, Version 2.0, a copy of which is included as
+LICENSE-APACHE. The Apache License 2.0 permits incorporation into a larger
+proprietary work. Those upstream portions remain individually identifiable and
+continue to be governed by their original Apache 2.0 grant. Nothing in the
+LICENSE restricts any right granted to you under the Apache 2.0 license with
+respect to those portions.
+
+Other third-party components retain their own licenses (see THIRD-PARTY
+DEPENDENCIES below).
+
+================================================================================
+
+MODIFICATIONS
+================================================================================
+
+In accordance with Section 4(b) of the Apache License 2.0, files modified from
+the original TradingAgents source carry prominent notices indicating the
+changes. See the project commit history (`git log`) for a complete and
+authoritative record of changes.
+
+================================================================================
+
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+This product includes the following third-party software, each retaining its
+own copyright and license. Inclusion does not transfer ownership.
+
+@earendil-works/pi-ai
+  Copyright (c) Mario Zechner and contributors
+  https://github.com/earendil-works/pi-mono
+  Licensed under the MIT License (per the package's npm metadata; the installed
+  tarball does not ship a LICENSE file, so this attribution reflects the
+  published `package.json`).
+
+  Used in the desktop application's Electron main process to handle the OpenAI
+  OAuth (Codex / ChatGPT subscription) login flow: PKCE state, the localhost
+  callback listener on port 1455, browser-callback and manual-paste fallback,
+  and access/refresh token exchange. The MIT license permits this combination
+  with the proprietary portions of TradingAgentsLab Pro.
+
+================================================================================
+
+TRADEMARKS
+================================================================================
+
+"TradingAgents" and any associated marks belong to Tauric Research.
+TradingAgentsLab Pro is an independent derivative project and is not endorsed
+by, affiliated with, or sponsored by Tauric Research.

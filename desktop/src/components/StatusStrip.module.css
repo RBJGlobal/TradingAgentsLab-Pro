@@ -1,0 +1,97 @@
+/* Compact status strip — sits between titleBar and the sidebar+main grid.
+   Pills are intentionally small and minimal. The user should be able to
+   glance up, see all greens, and know the system is healthy without
+   reading copy. */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-3);
+  padding: 0 var(--tal-space-4);
+  height: 100%;
+  background: var(--tal-bg-overlay, var(--tal-bg-elevated));
+  border-bottom: 1px solid var(--tal-border-subtle);
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--tal-border-subtle);
+  background: var(--tal-bg-base);
+  color: var(--tal-text-muted);
+  cursor: default;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.pill:hover {
+  background: var(--tal-bg-input);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: 10px;
+  color: var(--tal-text-muted);
+}
+
+.detail {
+  color: var(--tal-text-primary);
+  font-weight: 400;
+  /* Truncate gracefully if user has very long provider names. The Spend
+     pill needs more room because its detail can read e.g.
+     "$0.42 / $5.00 + $0.0012" — ~24 chars. */
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- States ------------------------------------------------------------ */
+
+.pill_ok .dot {
+  background: var(--tal-positive, #2ea043);
+  box-shadow: 0 0 4px rgba(46, 160, 67, 0.5);
+}
+
+.pill_warn .dot {
+  background: var(--tal-accent, #f0a830);
+}
+
+.pill_error {
+  border-color: rgba(248, 81, 73, 0.4);
+}
+.pill_error .dot {
+  background: var(--tal-negative, #f85149);
+  box-shadow: 0 0 4px rgba(248, 81, 73, 0.5);
+}
+
+.pill_off .dot {
+  background: var(--tal-text-muted, #6e7681);
+  opacity: 0.5;
+}
+
+.pill_pending .dot {
+  background: var(--tal-text-muted, #6e7681);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}

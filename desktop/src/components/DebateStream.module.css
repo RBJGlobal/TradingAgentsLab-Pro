@@ -1,0 +1,609 @@
+.stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-5);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tal-space-4);
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-4) var(--tal-space-5);
+}
+
+.headerLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tal-text-muted);
+}
+
+.headerTitle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-weight: 600;
+}
+
+.ticker {
+  color: var(--tal-accent);
+  font-size: var(--tal-text-xl);
+  letter-spacing: 0.02em;
+}
+
+.headerSep {
+  color: var(--tal-text-muted);
+}
+
+.tradeDate {
+  color: var(--tal-text-secondary);
+  font-size: var(--tal-text-base);
+}
+
+.streamingBadge {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tal-accent);
+  background: var(--tal-accent-muted);
+  border: 1px solid var(--tal-accent-border);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-1) var(--tal-space-3);
+}
+
+.streamingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tal-accent);
+  box-shadow: 0 0 0 3px var(--tal-accent-muted);
+  animation: pulse 1.4s ease-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.summaryStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--tal-space-4);
+  align-items: center;
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-4) var(--tal-space-5);
+  position: relative;
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-1);
+}
+
+.summaryLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.summaryValue {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-base);
+  color: var(--tal-text-primary);
+  font-weight: 600;
+}
+
+.summaryValuePositive {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-base);
+  color: var(--tal-positive);
+  font-weight: 600;
+}
+
+.summaryValueNegative {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-base);
+  color: var(--tal-negative);
+  font-weight: 600;
+}
+
+.summarySource {
+  grid-column: 1 / -1;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.news {
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-4) var(--tal-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+}
+
+.newsHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tal-space-3);
+}
+
+.newsLabel {
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-base);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tal-text-primary);
+}
+
+.newsSource {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.newsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+}
+
+.newsItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--tal-space-2) var(--tal-space-3);
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-bg-overlay);
+  border-left: 2px solid var(--tal-border-default);
+}
+
+.newsTitle {
+  color: var(--tal-text-primary);
+  font-size: var(--tal-text-sm);
+  line-height: 1.5;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+a.newsTitle:hover {
+  color: var(--tal-accent-strong);
+}
+
+.newsMeta {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.phase {
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-left: 3px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+}
+
+.phase_analysts { border-left-color: var(--tal-accent); }
+.phase_researchers { border-left-color: #d4791e; }
+.phase_trader { border-left-color: var(--tal-accent-strong); }
+.phase_risk { border-left-color: var(--tal-text-secondary); }
+
+.phaseHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+}
+
+.phaseLabel {
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-base);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tal-text-primary);
+}
+
+.phaseDescription {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+}
+
+.message {
+  background: var(--tal-bg-overlay);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+  animation: slide-in 200ms var(--tal-ease-out);
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.messageAgent {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.messageContent {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+  color: var(--tal-text-primary);
+  white-space: pre-wrap;
+}
+
+.decision {
+  background: linear-gradient(135deg, var(--tal-bg-elevated), var(--tal-bg-overlay));
+  border: 1px solid var(--tal-accent-border);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-6);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto auto;
+  column-gap: var(--tal-space-6);
+  row-gap: var(--tal-space-2);
+  box-shadow: var(--tal-shadow-md);
+  animation: slide-in 240ms var(--tal-ease-out);
+}
+
+.decisionLabel {
+  grid-column: 1;
+  grid-row: 1;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tal-text-muted);
+  align-self: end;
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+}
+
+.decisionLiveBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--tal-accent-muted);
+  color: var(--tal-accent);
+  border: 1px solid var(--tal-accent-border);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.decisionUsage {
+  grid-column: 2;
+  grid-row: 4;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  display: flex;
+  gap: var(--tal-space-3);
+  flex-wrap: wrap;
+  margin-top: var(--tal-space-2);
+}
+
+@media (max-width: 720px) {
+  .decisionUsage {
+    grid-column: 1;
+    grid-row: 5;
+  }
+}
+
+/* SEC: disclaimers must be prominent AND close to the relevant content.
+   The decision card is the riskiest piece on the page — a clear
+   "BUY at 75% confidence" reads like a recommendation. Inline disclaimer
+   directly below the decision keeps regulatory positioning explicit. */
+.decisionDisclaimer {
+  grid-column: 1 / -1;
+  grid-row: 5;
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+  color: var(--tal-text-muted);
+  letter-spacing: 0.02em;
+  padding-top: var(--tal-space-2);
+  margin-top: var(--tal-space-2);
+  border-top: 1px dashed var(--tal-border-subtle);
+  text-align: center;
+  font-style: italic;
+}
+
+@media (max-width: 720px) {
+  .decisionDisclaimer {
+    grid-row: 6;
+  }
+}
+
+.decisionAction {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  font-family: var(--tal-font-display);
+  font-size: var(--tal-text-4xl);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--tal-accent);
+  align-self: start;
+}
+
+.decision_BUY .decisionAction { color: var(--tal-positive); }
+.decision_SELL .decisionAction { color: var(--tal-negative); }
+.decision_HOLD .decisionAction { color: var(--tal-accent); }
+
+.decisionConfidence {
+  grid-column: 2;
+  grid-row: 1;
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  align-self: end;
+}
+
+.decisionConfidenceValue {
+  color: var(--tal-text-primary);
+  font-size: var(--tal-text-base);
+  font-weight: 600;
+  margin-left: var(--tal-space-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.decisionReasoning {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+  color: var(--tal-text-secondary);
+  align-self: start;
+}
+
+@media (max-width: 720px) {
+  .decision {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto auto;
+  }
+  .decisionAction { grid-column: 1; grid-row: 2; }
+  .decisionConfidence { grid-column: 1; grid-row: 3; }
+  .decisionReasoning { grid-column: 1; grid-row: 4; }
+}
+
+/* ----- Progress strip --------------------------------------------------
+ *
+ * Compact row of 4 phase chips with a footer summary. Sits between the
+ * news block and the phase groups so it's always within view while the
+ * debate runs. Visual states:
+ *
+ * - done:    muted positive (green), checkmark, slight fade so finished
+ *            work doesn't compete with active work for attention
+ * - active:  warm amber accent, filled dot, subtle pulse
+ * - pending: muted text, hollow circle
+ */
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-lg);
+  padding: var(--tal-space-3) var(--tal-space-5);
+}
+
+.progressPhases {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--tal-space-3);
+}
+
+.progressPhase {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  border-radius: var(--tal-radius-md);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background var(--tal-duration-fast) var(--tal-ease-out),
+              color var(--tal-duration-fast) var(--tal-ease-out),
+              border-color var(--tal-duration-fast) var(--tal-ease-out);
+}
+
+.progressPhaseMark {
+  font-size: 10px;
+  line-height: 1;
+  width: 12px;
+  text-align: center;
+}
+
+.progressPhaseLabel {
+  flex: 1;
+  font-weight: 600;
+}
+
+.progressPhaseCount {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* Done — muted positive tone. Slight fade keeps finished work
+   from competing with the currently-active phase. */
+.progressPhase_done {
+  color: var(--tal-positive, #2ea043);
+  background: rgba(46, 160, 67, 0.08);
+  border-color: rgba(46, 160, 67, 0.18);
+}
+
+/* Active — amber, the same brand accent used for the streaming pill +
+   the recommendation arrow on the app icon. The pulse loops via
+   `pulse` keyframes already declared higher in this file. */
+.progressPhase_active {
+  color: var(--tal-accent);
+  background: var(--tal-accent-muted);
+  border-color: var(--tal-accent-border);
+}
+
+.progressPhase_active .progressPhaseMark {
+  animation: pulse 1.4s ease-out infinite;
+}
+
+/* Pending — neutral muted. Hollow circle communicates "not yet". */
+.progressPhase_pending {
+  color: var(--tal-text-muted);
+  background: transparent;
+  border-color: var(--tal-border-subtle);
+}
+
+.progressFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.progressSep {
+  opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+  .progressPhases {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .progressPhase {
+    font-size: 11px;
+  }
+}
+
+/* Webhook report — sits below the decision card. Compact list, one
+   line per receiver, status icon + name + detail. Compact monospace
+   styling matches the other secondary blocks (progress strip, news). */
+.webhooks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  background: var(--tal-bg-elevated);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+}
+
+.webhooksHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tal-space-2);
+}
+
+.webhooksLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+
+.webhooksSummary {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary);
+}
+
+.webhooksList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.webhookItem {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary);
+}
+
+.webhookStatus {
+  text-align: center;
+  font-weight: 600;
+}
+
+.webhookItem_fired .webhookStatus {
+  color: var(--tal-positive, #3fb950);
+}
+
+.webhookItem_filtered .webhookStatus {
+  color: var(--tal-text-muted);
+}
+
+.webhookItem_failed .webhookStatus {
+  color: var(--tal-negative, #f85149);
+}
+
+.webhookName {
+  color: var(--tal-text-primary);
+}
+
+.webhookDetail {
+  color: var(--tal-text-muted);
+}

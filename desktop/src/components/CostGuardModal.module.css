@@ -1,0 +1,179 @@
+/* CostGuard override modal — dark scrim + centered card.
+   Matches the warm-amber-on-dark v1 brand signature. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 17, 23, 0.78);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  width: min(520px, 90vw);
+  padding: 24px 28px 20px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color: #e6edf3;
+  animation: slideUp 0.18s ease-out;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f0a830;
+  letter-spacing: -0.01em;
+}
+
+.body {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #c9d1d9;
+}
+
+.capList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 6px;
+}
+
+.capRow {
+  display: grid;
+  grid-template-columns: 70px 1fr 110px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
+  color: #8b949e;
+}
+
+.capRowHighlight {
+  color: #e6edf3;
+  font-weight: 500;
+}
+
+.capLabel {
+  text-align: left;
+}
+
+.capProgress {
+  height: 8px;
+  background: #21262d;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.capBar {
+  height: 100%;
+  background: #2ea043;
+  transition: width 0.2s ease;
+}
+
+.capBarWarn {
+  background: #f0a830;
+}
+
+.capBarOver {
+  background: #f85149;
+}
+
+.capValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.cancel,
+.override {
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+  font-family: inherit;
+}
+
+.cancel {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+.cancel:hover {
+  background: #21262d;
+  border-color: #484f58;
+}
+
+.override {
+  background: #f0a830;
+  border: 1px solid #f0a830;
+  color: #0d1117;
+  font-weight: 600;
+  min-width: 180px;
+  font-variant-numeric: tabular-nums;
+}
+
+.override:hover:not(:disabled) {
+  background: #ffba3c;
+  border-color: #ffba3c;
+}
+
+.override:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #6e7681;
+  border-color: #6e7681;
+  color: #0d1117;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6e7681;
+  text-align: center;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

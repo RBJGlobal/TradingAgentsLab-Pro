@@ -1,0 +1,151 @@
+.batchCard {
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: var(--tal-bg-card);
+  border: 1px solid var(--tal-border);
+  border-radius: 8px;
+}
+
+.batchHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.batchTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tal-text);
+  letter-spacing: 0.02em;
+}
+
+.batchStatus {
+  font-size: 12px;
+  color: var(--tal-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.batchActions {
+  display: flex;
+  gap: 8px;
+}
+
+.stopButton {
+  background: transparent;
+  border: 1px solid var(--tal-border);
+  color: var(--tal-text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.stopButton:hover:not(:disabled) {
+  border-color: var(--tal-accent);
+  color: var(--tal-accent);
+}
+
+.stopButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.progressList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.progressRow {
+  display: grid;
+  grid-template-columns: 60px 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--tal-bg-sunken);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.progressRow_current {
+  border: 1px solid var(--tal-accent);
+  background: var(--tal-bg-overlay);
+}
+
+.progressRow_failed {
+  background: rgba(220, 50, 50, 0.06);
+}
+
+.progressTicker {
+  font-weight: 600;
+  font-family: var(--tal-font-mono);
+  color: var(--tal-text);
+}
+
+.progressState {
+  color: var(--tal-text-muted);
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+}
+
+.progressDecision {
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.progressDecision_BUY { color: var(--tal-buy, #4caf50); }
+.progressDecision_SELL { color: var(--tal-sell, #d64545); }
+.progressDecision_HOLD { color: var(--tal-accent); }
+
+.progressMeta {
+  color: var(--tal-text-muted);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--tal-font-mono);
+  font-size: 11px;
+}
+
+.summaryBar {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--tal-border);
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--tal-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryError {
+  color: var(--tal-sell, #d64545);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.runButton {
+  background: var(--tal-accent);
+  color: var(--tal-bg);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.runButton:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.runButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
