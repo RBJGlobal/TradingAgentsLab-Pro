@@ -458,6 +458,15 @@ def build_app(*, token: str) -> FastAPI:
             # check. If absent on a live debate, the WS handler auto-reserves
             # below for backward compatibility.
             reservation_id = start.get("reservation_id") or None
+            # Pro engine selection. The free renderer never sends `engine`, so
+            # the full-graph path is opt-in and the free path stays byte-for-byte
+            # identical. `pro_config` carries the deep/quick model split, debate
+            # round counts, effort, analyst selection, and an optional token cap.
+            engine_mode = str(start.get("engine") or "").lower()
+            is_pro = engine_mode in ("full", "pro")
+            pro_config_raw = start.get("pro_config") or {}
+            if not isinstance(pro_config_raw, dict):
+                pro_config_raw = {}
             # Optional. Per-stream webhook configs (Phase 8a). Renderer sends
             # the full list each time; engine fires them after persist + before
             # ws.close(1000). URLs ARE secrets (Telegram/Discord embed bot
@@ -519,8 +528,11 @@ def build_app(*, token: str) -> FastAPI:
             # burn ~6s of latency for nothing. Fetches run in parallel
             # via asyncio.gather; either failure surfaces as the
             # function's placeholder string, never as an exception.
+            # The full graph's social analyst fetches its own sentiment via
+            # tools, so this pre-fetch is skipped on the Pro path (wasted
+            # latency + cost otherwise). The free live_debate still needs it.
             sentiment: Optional[SentimentBlock] = None
-            if config is not None:
+            if config is not None and not is_pro:
                 try:
                     spec = normalize_ticker(ticker)
                     twits_text, reddit_text = await asyncio.gather(
@@ -546,6 +558,49 @@ def build_app(*, token: str) -> FastAPI:
                     sentiment = None
 
             if config is not None:
+                # The upstream library reads the provider key from its env var
+                # at LLM construction and cannot use an OAuth access token, so
+                # the Pro engine requires an API key. Reject up front with a
+                # clear terminal event rather than failing deep in graph build.
+                if is_pro and config.auth_kind != "api_key":
+                    evt = {
+                        "type": "run.error",
+                        "error": (
+                            f"Pro engine requires an API key; {config.auth_kind} "
+                            f"auth is not supported for the full-graph analysis."
+                        ),
+                    }
+                    await ws.send_json(evt)
+                    captured_events.append(evt)
+                    await ws.close(code=1008, reason="pro_requires_api_key")
+                    return
+
+                # The full graph runs on the deep/quick split; reserve against
+                # the (pricier) deep model so the pre-flight budget gate is the
+                # conservative one. free path reserves against its single model.
+                # A malformed pro_config (e.g. non-numeric rounds) would raise
+                # inside the translator; catch it and surface a run.error instead
+                # of letting it close the socket as an opaque 1011. No reservation
+                # exists yet at this point, so there is nothing to release.
+                pro_lib_config: dict[str, Any] | None = None
+                if is_pro:
+                    try:
+                        pro_lib_config = _build_pro_library_config(config, pro_config_raw)
+                    except (ValueError, TypeError) as exc:
+                        evt = {
+                            "type": "run.error",
+                            "error": f"Invalid Pro configuration: {exc}",
+                        }
+                        await ws.send_json(evt)
+                        captured_events.append(evt)
+                        await ws.close(code=1008, reason="invalid_pro_config")
+                        return
+                reserve_model = (
+                    (pro_lib_config or {}).get("deep_think_llm") or config.model
+                    if is_pro
+                    else config.model
+                )
+
                 # CostGuard auto-reserve when the renderer didn't pre-reserve.
                 # Older renderer versions don't send reservation_id; rather
                 # than reject them, we reserve server-side with override=False.
@@ -555,7 +610,7 @@ def build_app(*, token: str) -> FastAPI:
                 if not reservation_id:
                     try:
                         auto = cost_guard.reserve(
-                            model=config.model,
+                            model=reserve_model,
                             auth_kind=config.auth_kind,
                             max_tokens=config.max_tokens,
                             override=False,
@@ -577,18 +632,71 @@ def build_app(*, token: str) -> FastAPI:
                         captured_events.append(evt)
                         await ws.close(code=1008, reason="cost_guard_blocked")
                         return
-                # Live debate path. Each agent.message arrives as the LLM
-                # response completes — we throttle a little between events
-                # so the UI's transition animations are still visible.
-                async for event in live_debate(
-                    ticker=ticker,
-                    trade_date=trade_date,
-                    summary=summary,
-                    headlines=headlines,
-                    config=config,
-                    reservation_id=reservation_id,
-                    sentiment=sentiment,
-                ):
+
+                # Both engines are async generators yielding the same event
+                # shapes, so the send/capture loop is uniform. Pro routes to the
+                # real LangGraph graph; free routes to the simplified reimpl.
+                if is_pro:
+                    # Imported lazily: the full graph pulls in langchain +
+                    # the tradingagents library, which the free engine (and
+                    # its test venv) does not carry. Keeping this off the
+                    # module-load path means the free path boots without those
+                    # deps and a Pro run surfaces a missing-dep as run.error.
+                    try:
+                        from .full_debate import full_debate
+                    except Exception as exc:  # noqa: BLE001
+                        evt = {
+                            "type": "run.error",
+                            "error": (
+                                "Pro engine unavailable: the full-graph "
+                                f"dependencies failed to load ({type(exc).__name__})."
+                            ),
+                        }
+                        await ws.send_json(evt)
+                        captured_events.append(evt)
+                        # Release the reservation we just took so a boot-dep
+                        # failure doesn't leave budget stuck as in-flight.
+                        if reservation_id:
+                            try:
+                                cost_guard.finalize_reservation(
+                                    reservation_id, actual_cost_usd=0.0
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+                        await ws.close(code=1011, reason="pro_engine_unavailable")
+                        return
+
+                    raw_cap = pro_config_raw.get("token_cap")
+                    token_cap = (
+                        int(raw_cap)
+                        if isinstance(raw_cap, (int, float)) and raw_cap > 0
+                        else None
+                    )
+                    debate_events = full_debate(
+                        ticker,
+                        trade_date,
+                        config=pro_lib_config,
+                        selected_analysts=(pro_config_raw.get("selected_analysts") or None),
+                        token_cap=token_cap,
+                        api_key=config.bearer_token,
+                        auth_kind=config.auth_kind,
+                        reservation_id=reservation_id,
+                    )
+                else:
+                    debate_events = live_debate(
+                        ticker=ticker,
+                        trade_date=trade_date,
+                        summary=summary,
+                        headlines=headlines,
+                        config=config,
+                        reservation_id=reservation_id,
+                        sentiment=sentiment,
+                    )
+
+                # Each agent.message arrives as the LLM response completes — we
+                # throttle a little between events so the UI's transition
+                # animations are still visible.
+                async for event in debate_events:
                     await ws.send_json(event)
                     captured_events.append(event)
                     await asyncio.sleep(0.15)
@@ -737,6 +845,41 @@ def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
         "source": summary.source,
         "asset_class": summary.asset_class,
     }
+
+
+def _build_pro_library_config(config: ProviderConfig, pro_raw: dict) -> dict[str, Any]:
+    """Translate the renderer's provider_config + pro_config into the upstream
+    library config dict that `full_debate` merges over DEFAULT_CONFIG.
+
+    The free path uses a single `model`; the full graph uses a deep/quick split,
+    so deep/quick default to `config.model` when the renderer doesn't split them.
+    Reasoning-effort is threaded under the provider-specific key the upstream
+    `_get_provider_kwargs` reads. `full_debate._build_config` validates the
+    required keys and fills every other default.
+    """
+    provider = config.provider
+    deep = (pro_raw.get("deep_think_llm") or config.model or "").strip()
+    quick = (pro_raw.get("quick_think_llm") or config.model or deep).strip()
+    lib: dict[str, Any] = {
+        "llm_provider": provider,
+        "deep_think_llm": deep,
+        "quick_think_llm": quick,
+        "max_debate_rounds": int(pro_raw.get("max_debate_rounds", 1) or 1),
+        "max_risk_discuss_rounds": int(pro_raw.get("max_risk_discuss_rounds", 1) or 1),
+    }
+    effort = str(pro_raw.get("effort") or "").strip()
+    if effort:
+        if provider == "anthropic":
+            lib["anthropic_effort"] = effort
+        elif provider == "openai":
+            lib["openai_reasoning_effort"] = effort
+        elif provider == "google":
+            lib["google_thinking_level"] = effort
+    # Local runtime endpoint (Ollama / LM Studio), when the auth shape carries it.
+    base_url = config.auth.get("base_url") if isinstance(config.auth, dict) else None
+    if base_url:
+        lib["backend_url"] = base_url
+    return lib
 
 
 class AnalyzeRequest(BaseModel):
