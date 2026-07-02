@@ -28,6 +28,7 @@ import { getSecret } from './secrets';
 import { loadLocalConfig } from './local-llm';
 import { getOpenAICredentialsForRequest } from './oauth';
 import { loadWebhooks, type WebhookConfig } from './webhooks';
+import { assembleProConfig } from './pro-config';
 
 export interface RunAnalysisOptions {
   ticker: string;
@@ -88,9 +89,18 @@ export async function runAnalysis(
   const providerConfig = await resolveProviderConfig(opts, maxTokens);
   const dataConfig = await resolveDataConfig();
 
+  // Pro is a distinct build: every live run drives the real LangGraph "full"
+  // engine. `pro_config` carries the deep/quick split, rounds, analyst
+  // selection, effort, and token cap. It is inert for the stub path (no
+  // provider) because server.py branches on the engine flag only inside its
+  // `config is not None` block, so engine='pro' + no key still falls to stub.
+  const proConfig = assembleProConfig(opts.model, opts.provider);
+
   let reservationId: string | undefined;
   if (providerConfig) {
-    const cgModel = providerConfig.model ?? '';
+    // Reserve against the deep model (the pricier of the split) so the
+    // pre-flight budget gate is the conservative one for a full-graph run.
+    const cgModel = proConfig.deep_think_llm || providerConfig.model || '';
     const reserveReq = {
       model: cgModel,
       auth_kind: providerConfig.auth.type,
@@ -139,6 +149,8 @@ export async function runAnalysis(
       webhooks: webhookConfigs.length > 0 ? webhookConfigs : undefined,
       telegram_chat_ids:
         Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
+      engine: 'pro',
+      pro_config: proConfig,
     },
     wrappedOnEvent,
     callbacks.onError,

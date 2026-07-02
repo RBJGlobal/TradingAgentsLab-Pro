@@ -61,10 +61,22 @@ import {
   type WebhookConfig,
   type WebhookKind,
 } from '../lib/webhooks';
+import {
+  ALL_ANALYSTS,
+  ANALYST_LABEL,
+  ANALYSTS_NEEDING_DATA_KEY,
+  EFFORT_LEVELS,
+  loadProConfig,
+  saveProConfig,
+  type AnalystId,
+  type EffortLevel,
+  type ProConfigState,
+} from '../lib/pro-config';
 
 type Tab =
   | 'llm'
   | 'data'
+  | 'analysis'
   | 'webhooks'
   | 'channels'
   | 'clawless'
@@ -89,6 +101,12 @@ const TABS: TabDef[] = [
     label: 'Data Providers',
     description:
       'Where market data comes from. yfinance is the free default, no key required. Optionally connect Alpaca Markets for higher-quality real-time data.',
+  },
+  {
+    id: 'analysis',
+    label: 'Analysis',
+    description:
+      'Tune the multi-agent diligence: which analysts run, how many debate rounds, reasoning effort, and a token-cap backstop. These apply to every run.',
   },
   {
     id: 'webhooks',
@@ -395,6 +413,7 @@ function Settings() {
               onChange={refresh}
             />
           )}
+          {active === 'analysis' && <ProAnalysisTab />}
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
           {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
@@ -1701,6 +1720,161 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
 }
 
 // ---- Cost Guard tab --------------------------------------------------------
+
+function ProAnalysisTab() {
+  // Local mirror of the persisted Pro run-config. Writes go straight to
+  // localStorage (no engine round-trip), so we persist on each change and
+  // reflect it immediately. `tokenCapDraft` is kept as a separate string so
+  // the field can be cleared/retyped without fighting a numeric state.
+  const [state, setState] = useState<ProConfigState>(() => loadProConfig());
+  const [tokenCapDraft, setTokenCapDraft] = useState<string>(
+    state.tokenCap != null ? String(state.tokenCap) : '',
+  );
+
+  const persist = (next: ProConfigState) => {
+    setState(next);
+    saveProConfig(next);
+  };
+
+  const toggleAnalyst = (id: AnalystId) => {
+    const raw = state.selectedAnalysts.includes(id)
+      ? state.selectedAnalysts.filter((a) => a !== id)
+      : [...state.selectedAnalysts, id];
+    // Keep canonical order and never allow an empty set (an analyst-less run
+    // is invalid); fall back to market-only.
+    const ordered = ALL_ANALYSTS.filter((a) => raw.includes(a));
+    persist({ ...state, selectedAnalysts: ordered.length > 0 ? ordered : ['market'] });
+  };
+
+  const commitTokenCap = () => {
+    const trimmed = tokenCapDraft.trim();
+    const parsed = trimmed === '' ? null : Math.max(0, Math.floor(Number(trimmed)));
+    const cap = parsed && parsed > 0 ? parsed : null;
+    setTokenCapDraft(cap != null ? String(cap) : '');
+    persist({ ...state, tokenCap: cap });
+  };
+
+  return (
+    <div className={styles.formCard}>
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Analysts</legend>
+        <p className={styles.formHint}>
+          Which analysts run in the diligence. Market is free (yfinance). News,
+          Social, and Fundamentals require an Alpha Vantage data key (add one
+          under Data Providers). Without a data key, keep Market only.
+        </p>
+        {ALL_ANALYSTS.map((id) => (
+          <label key={id} className={styles.toggleRow}>
+            <input
+              type="checkbox"
+              checked={state.selectedAnalysts.includes(id)}
+              onChange={() => toggleAnalyst(id)}
+            />
+            <span>
+              <strong>{ANALYST_LABEL[id]}</strong>
+              {ANALYSTS_NEEDING_DATA_KEY.includes(id) && (
+                <div className={styles.formHint}>Requires an Alpha Vantage data key</div>
+              )}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Debate depth</legend>
+        <p className={styles.formHint}>
+          More rounds means a deeper, more expensive debate. Each research round
+          adds a bull and a bear turn; each risk round adds three analyst turns.
+        </p>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Research rounds (bull vs bear)
+            <select
+              className={styles.costInputField}
+              value={state.maxDebateRounds}
+              onChange={(e) => persist({ ...state, maxDebateRounds: Number(e.target.value) })}
+            >
+              {[1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Risk rounds (aggressive / conservative / neutral)
+            <select
+              className={styles.costInputField}
+              value={state.maxRiskRounds}
+              onChange={(e) => persist({ ...state, maxRiskRounds: Number(e.target.value) })}
+            >
+              {[1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Reasoning effort</legend>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Effort
+            <select
+              className={styles.costInputField}
+              value={state.effort ?? ''}
+              onChange={(e) =>
+                persist({ ...state, effort: (e.target.value || null) as EffortLevel | null })
+              }
+            >
+              <option value="">Default</option>
+              {EFFORT_LEVELS.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {lvl}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className={styles.formHint}>
+          Applies to Anthropic Claude Sonnet 4.6 only, the sole model that
+          accepts the effort parameter. Ignored for other providers and models.
+        </p>
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Token cap</legend>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Max tokens per run
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1000}
+              className={styles.costInputField}
+              placeholder="No cap"
+              value={tokenCapDraft}
+              onChange={(e) => setTokenCapDraft(e.target.value)}
+              onBlur={commitTokenCap}
+            />
+          </label>
+        </div>
+        <p className={styles.formHint}>
+          Optional safety backstop. The run stops if total tokens cross this
+          limit. Leave blank to rely on the Cost Guard budget caps instead.
+        </p>
+      </fieldset>
+
+      <p className={styles.formHint}>Changes save automatically and apply to your next run.</p>
+    </div>
+  );
+}
 
 function CostGuardTab() {
   const [config, setConfig] = useState<CostGuardConfig | null>(null);

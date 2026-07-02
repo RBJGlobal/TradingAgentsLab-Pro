@@ -1,9 +1,9 @@
 {
-  "name": "tradingagentslab-desktop",
-  "productName": "Trading Agents Lab",
+  "name": "tradingagentslab-pro-desktop",
+  "productName": "Trading Agents Lab Pro",
   "version": "1.0.0",
   "private": true,
-  "description": "Trading Agents Lab desktop — standalone trading companion for Clawless",
+  "description": "Trading Agents Lab Pro desktop — full multi-agent diligence on the real LangGraph engine (paid, proprietary)",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {

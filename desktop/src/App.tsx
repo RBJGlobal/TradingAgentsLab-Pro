@@ -130,7 +130,7 @@ function App() {
         <div className={styles.titleBarContent}>
           <span className={styles.brand}>
             <span className={styles.brandMark}>◆</span>
-            <span className={styles.brandText}>Trading Agents Lab</span>
+            <span className={styles.brandText}>Trading Agents Lab Pro</span>
           </span>
           <div className={styles.titleBarRight}>
             <span className={styles.connectionPill}>Standalone</span>
@@ -220,7 +220,7 @@ function App() {
       )}
 
       <footer className={styles.footer}>
-        <span>Trading Agents Lab v1.0.0 · AGPL-3.0</span>
+        <span>Trading Agents Lab Pro v1.0.0 · Proprietary</span>
         <span className={styles.footerRight}>
           Educational research only · Not a registered investment advisor · Not investment advice
         </span>

@@ -64,7 +64,7 @@ export function registerUpdater(getWindow: () => BrowserWindow | null): void {
       defaultId: 0,
       cancelId: 1,
       title: 'Update ready',
-      message: `Trading Agents Lab ${info.version} is ready to install.`,
+      message: `Trading Agents Lab Pro ${info.version} is ready to install.`,
       detail:
         'Restart now to update, or it will install automatically the next time you quit.',
     };

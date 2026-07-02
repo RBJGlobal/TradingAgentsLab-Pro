@@ -35,7 +35,7 @@ process.env.APP_ROOT = path.join(__dirname, '..');
 // resolves and before the menu template references `app.name`.
 // Repo / package names stay one word ("TradingAgentsLab") — only the
 // user-facing display surface is three words.
-app.setName('Trading Agents Lab');
+app.setName('Trading Agents Lab Pro');
 
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist');
@@ -67,7 +67,7 @@ async function createWindow() {
     minHeight: 600,
     backgroundColor: '#0d1117',
     titleBarStyle: 'hiddenInset',
-    title: 'Trading Agents Lab',
+    title: 'Trading Agents Lab Pro',
     // BrowserWindow takes a single icon for cross-platform use. macOS reads
     // it but defers to the app bundle's icon at runtime — `app.dock.setIcon`
     // below is what actually swaps the dock icon in dev mode.
@@ -227,12 +227,12 @@ async function confirmAction(action: 'shutdown' | 'restart'): Promise<boolean> {
   const w = win;
   const messages = {
     shutdown: {
-      title: 'Shut down Trading Agents Lab?',
+      title: 'Shut down Trading Agents Lab Pro?',
       detail: 'The engine sidecar will stop and the app will quit. Any in-flight debate is aborted.',
       confirmLabel: 'Shut down',
     },
     restart: {
-      title: 'Restart Trading Agents Lab?',
+      title: 'Restart Trading Agents Lab Pro?',
       detail: 'The engine sidecar will stop and the app will relaunch. Any in-flight debate is aborted.',
       confirmLabel: 'Restart',
     },
