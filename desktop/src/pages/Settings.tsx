@@ -72,6 +72,13 @@ import {
   type EffortLevel,
   type ProConfigState,
 } from '../lib/pro-config';
+import {
+  clearLicenseKey,
+  getLicenseKey,
+  getLicenseStatus,
+  saveLicenseKey,
+  type LicenseStatus,
+} from '../lib/license';
 
 type Tab =
   | 'llm'
@@ -81,6 +88,7 @@ type Tab =
   | 'channels'
   | 'clawless'
   | 'costguard'
+  | 'license'
   | 'about';
 
 interface TabDef {
@@ -131,6 +139,12 @@ const TABS: TabDef[] = [
     label: 'Cost Guard',
     description:
       'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only; stub mode is always free.',
+  },
+  {
+    id: 'license',
+    label: 'License',
+    description:
+      'Your trial status and license key. One-time license, no subscription. Runs are fully unlocked during the free trial.',
   },
   {
     id: 'about',
@@ -417,6 +431,7 @@ function Settings() {
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
           {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
+          {active === 'license' && <LicenseTab />}
           {active === 'about' && (
             <AboutTab availability={availability} secretsCount={listings.length} />
           )}
@@ -1720,6 +1735,77 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
 }
 
 // ---- Cost Guard tab --------------------------------------------------------
+
+function LicenseTab() {
+  // Trial status + license-key entry. Validation is a seam stub today (see
+  // lib/license): a key can be stored but will not validate until the Keygen /
+  // Ed25519 playbook is wired, so we message that honestly rather than pretend
+  // to activate. The trial stays fully unlocked in the meantime.
+  const [status, setStatus] = useState<LicenseStatus>(() => getLicenseStatus());
+  const [keyDraft, setKeyDraft] = useState<string>(() => getLicenseKey() ?? '');
+  const [message, setMessage] = useState<string | null>(null);
+
+  const onSave = () => {
+    const trimmed = keyDraft.trim();
+    if (!trimmed) {
+      clearLicenseKey();
+      setStatus(getLicenseStatus());
+      setMessage('License key cleared.');
+      return;
+    }
+    saveLicenseKey(trimmed);
+    const next = getLicenseStatus();
+    setStatus(next);
+    setMessage(
+      next.state === 'licensed'
+        ? 'License activated. Thank you.'
+        : 'Key saved. Online activation is coming soon; your trial remains active until then.',
+    );
+  };
+
+  const statusLine =
+    status.state === 'licensed'
+      ? 'Licensed. Full access to the multi-agent diligence.'
+      : status.state === 'trial'
+        ? `Free trial: ${status.trialDaysLeft} day${status.trialDaysLeft === 1 ? '' : 's'} left. Runs are fully unlocked during the trial.`
+        : 'Your free trial has ended. Enter a license key below to continue running the diligence.';
+
+  return (
+    <div className={styles.formCard}>
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Status</legend>
+        <p className={styles.formHint}>{statusLine}</p>
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>License key</legend>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Key
+            <input
+              type="text"
+              className={styles.costInputField}
+              placeholder="Paste your license key"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+            />
+          </label>
+        </div>
+        <p className={styles.formHint}>
+          Purchase and activation are handled on the Trading Agents Lab Pro
+          website. One-time license, no subscription.
+        </p>
+        {message && <p className={styles.formSuccess}>{message}</p>}
+      </fieldset>
+
+      <div className={styles.formActions}>
+        <button type="button" className={styles.formSave} onClick={onSave}>
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ProAnalysisTab() {
   // Local mirror of the persisted Pro run-config. Writes go straight to

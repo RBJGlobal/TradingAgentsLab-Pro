@@ -15,7 +15,7 @@ import asyncio
 import sys
 import time
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
 from fastapi import (
     Depends,
@@ -467,6 +467,21 @@ def build_app(*, token: str) -> FastAPI:
             pro_config_raw = start.get("pro_config") or {}
             if not isinstance(pro_config_raw, dict):
                 pro_config_raw = {}
+
+            # License pre-flight — the engine-side enforcement point (defense in
+            # depth). The renderer already gates expired trials before opening
+            # the WS; this is the second gate. Currently a permissive stub (the
+            # renderer holds trial state); see _license_preflight for the wiring
+            # TODO. Gates every run, stub and live alike.
+            if not _license_preflight(start.get("license")):
+                evt = {
+                    "type": "run.error",
+                    "error": "License required. Your Trading Agents Lab Pro trial has ended.",
+                }
+                await ws.send_json(evt)
+                captured_events.append(evt)
+                await ws.close(code=1008, reason="license_required")
+                return
             # Optional. Per-stream webhook configs (Phase 8a). Renderer sends
             # the full list each time; engine fires them after persist + before
             # ws.close(1000). URLs ARE secrets (Telegram/Discord embed bot
@@ -845,6 +860,20 @@ def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
         "source": summary.source,
         "asset_class": summary.asset_class,
     }
+
+
+def _license_preflight(license_token: str | None) -> bool:
+    """SEAM STUB — engine-side license enforcement (defense in depth).
+
+    The renderer holds the trial state and already blocks expired trials before
+    opening the WebSocket, so this always allows today. Keeping the call-site
+    now means the founder's licensing wiring is a one-function drop-in.
+
+    TODO(license-playbook): verify an Ed25519-signed Keygen license token
+    (passed as ``start["license"]``) against the RBJ public key here, and return
+    False when the trial is over AND no valid token is present.
+    """
+    return True
 
 
 def _build_pro_library_config(config: ProviderConfig, pro_raw: dict) -> dict[str, Any]:

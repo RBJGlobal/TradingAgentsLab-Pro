@@ -183,6 +183,19 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
           return;
         }
 
+        if (result.kind === 'license_blocked') {
+          setRows((prev) =>
+            prev.map((r, idx) =>
+              idx === i ? { ...r, status: 'failed', error: 'Trial ended' } : r,
+            ),
+          );
+          setBatchError(
+            'Your Pro trial has ended. Enter a license key under Settings, License to continue.',
+          );
+          setPhase('cancelled');
+          return;
+        }
+
         currentHandleRef.current = result.handle;
         await result.handle.done;
         currentHandleRef.current = null;

@@ -29,6 +29,7 @@ import { loadLocalConfig } from './local-llm';
 import { getOpenAICredentialsForRequest } from './oauth';
 import { loadWebhooks, type WebhookConfig } from './webhooks';
 import { assembleProConfig } from './pro-config';
+import { getLicenseKey, getLicenseStatus, type LicenseStatus } from './license';
 
 export interface RunAnalysisOptions {
   ticker: string;
@@ -60,7 +61,8 @@ export interface RunAnalysisCallbacks {
 
 export type RunAnalysisResult =
   | { kind: 'streaming'; handle: StreamHandle }
-  | { kind: 'cancelled'; reason: 'cost_guard' };
+  | { kind: 'cancelled'; reason: 'cost_guard' }
+  | { kind: 'license_blocked'; status: LicenseStatus };
 
 /**
  * Build the request, optionally negotiate CostGuard, and open the WS.
@@ -85,6 +87,14 @@ export async function runAnalysis(
   opts: RunAnalysisOptions,
   callbacks: RunAnalysisCallbacks,
 ): Promise<RunAnalysisResult> {
+  // License gate — the single renderer chokepoint. A Pro run is blocked only
+  // when the trial has expired and no valid license is present. See lib/license
+  // (the validation is a seam stub until the Keygen/Ed25519 playbook is wired).
+  const licenseStatus = getLicenseStatus();
+  if (licenseStatus.state === 'expired') {
+    return { kind: 'license_blocked', status: licenseStatus };
+  }
+
   const maxTokens = opts.maxTokens ?? 400;
   const providerConfig = await resolveProviderConfig(opts, maxTokens);
   const dataConfig = await resolveDataConfig();
@@ -151,6 +161,9 @@ export async function runAnalysis(
         Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
       engine: 'pro',
       pro_config: proConfig,
+      // Forward the license key (if any) for the engine-side pre-flight.
+      // Undefined during the trial; inert while the engine check is a stub.
+      license: getLicenseKey() ?? undefined,
     },
     wrappedOnEvent,
     callbacks.onError,

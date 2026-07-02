@@ -302,6 +302,12 @@ export interface AnalyzeRequest {
   engine?: 'full' | 'pro';
   /** Pro-only knobs; ignored unless `engine` selects the Pro path. */
   pro_config?: ProConfig;
+  /** License-gate seam: the stored license key, forwarded so the engine's
+   * pre-flight can verify it (defense in depth). Today the engine pre-flight
+   * is a permissive stub, so this is inert; wiring it now means the founder's
+   * Keygen/Ed25519 validation is a true engine-side drop-in with the token
+   * already on the wire. Undefined during the trial (no key yet). */
+  license?: string;
   /** Optional per-stream data provider override (e.g. Alpaca). Engine
    * falls through to yfinance default when absent. */
   data_config?: DataConfig;
@@ -1013,6 +1019,9 @@ export async function streamDebate(
         // inert until the Pro Settings surface populates them.
         engine: req.engine,
         pro_config: req.pro_config,
+        // License token for the engine-side pre-flight (inert while the
+        // engine check is a stub; dropped by JSON.stringify when undefined).
+        license: req.license,
       }),
     );
   });
