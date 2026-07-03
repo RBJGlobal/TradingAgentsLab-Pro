@@ -26,13 +26,16 @@
   --tal-text-muted:     #6e7681;
   --tal-text-inverse:   #0d1117;
 
-  /* Accent — warm amber */
-  --tal-accent:         #f0a830;
-  --tal-accent-strong:  #ffb74d;
-  --tal-accent-muted:   rgba(240, 168, 48, 0.15);
-  --tal-accent-border:  rgba(240, 168, 48, 0.4);
-  /* Pro accent-glow: a soft amber halo for hero/active surfaces (Pro polish). */
-  --tal-accent-glow:    0 0 0 1px rgba(240, 168, 48, 0.25), 0 6px 22px rgba(240, 168, 48, 0.10);
+  /* Accent — Pro indigo. Refined cool accent for a premium fintech feel
+     (Robinhood/Coinbase-adjacent), deliberately diverging from the free app's
+     amber so Pro reads as distinct. Cool tone keeps it clear of the green/red
+     gain-loss semantics and of Clawless cyan. */
+  --tal-accent:         #5b74f0;
+  --tal-accent-strong:  #8a9bff;
+  --tal-accent-muted:   rgba(91, 116, 240, 0.15);
+  --tal-accent-border:  rgba(91, 116, 240, 0.38);
+  /* Pro accent-glow: a soft indigo halo for hero/active surfaces. */
+  --tal-accent-glow:    0 0 0 1px rgba(91, 116, 240, 0.28), 0 8px 26px rgba(91, 116, 240, 0.14);
 
   /* Semantic — gain/loss (used sparingly, not the brand color) */
   --tal-positive:       #3fb950;

@@ -21,7 +21,11 @@ function Markdown({ children, className }: MarkdownProps) {
   return (
     <div className={`${styles.markdown} ${className ?? ''}`.trim()}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        // singleTilde:false — the analysts write "~$53.50" / "~45%" to mean
+        // "approximately". With GFM's default single-tilde strikethrough, a
+        // pair of those tildes on a line renders everything between them struck
+        // out. Requiring a double tilde (~~) keeps "approximately" literal.
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         components={{
           a(props) {
             return (
