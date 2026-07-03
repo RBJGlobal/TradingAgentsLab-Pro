@@ -15,15 +15,18 @@ import { BrowserWindow } from 'electron';
 
 const AV_KEY_URL = 'https://www.alphavantage.co/support/#api-key';
 
-// Alpha Vantage issues the key in a result message ("...your dedicated access
-// key is: XXXXXXXXXXXX. Please record this API key..."). Anchor on "key is:"
-// (matches "access key is" and "API key is") rather than exact HTML: this
-// survives minor wording/markup changes and, because no such labelled token
-// exists before submission, avoids grabbing unrelated tokens on the page.
-// TODO: pin to Alpha Vantage's exact result sentence once confirmed.
-const KEY_IN_RESULT = /key is:?\s*([A-Z0-9]{10,24})/i;
+// Alpha Vantage's confirmed result message: "Welcome to Alpha Vantage! Here is
+// your API key: XXXXXXXXXXXXXXXX. Please record this API key at a safe place..."
+// followed a few lines down by a competitor promo. We anchor on "API key:"
+// then the token (16 uppercase-alphanumeric chars; range allows for drift).
+// That labelled-token pattern does not exist before the form is submitted, so
+// there are no false positives from the form/docs, and matching text (not exact
+// HTML) survives minor markup changes.
+const KEY_IN_RESULT = /API key:\s*([A-Z0-9]{12,24})/i;
 
-const POLL_MS = 700;
+// Poll fast so we capture-and-close within a few hundred ms of the key
+// appearing, before the user can read down to the promo shown beneath it.
+const POLL_MS = 350;
 
 /**
  * Resolves with the captured key, or null if the user closed the window first.
