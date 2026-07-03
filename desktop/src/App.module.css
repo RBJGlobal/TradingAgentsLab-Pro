@@ -51,6 +51,20 @@
   font-size: var(--tal-text-sm);
 }
 
+/* Pro marker: a small amber pill so the paid identity reads at a glance. */
+.brandPro {
+  font-family: var(--tal-font-mono);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tal-text-inverse);
+  background: var(--tal-accent);
+  padding: 1px 6px;
+  border-radius: var(--tal-radius-sm);
+  box-shadow: 0 0 10px var(--tal-accent-muted);
+}
+
 .connectionPill {
   font-family: var(--tal-font-mono);
   font-size: var(--tal-text-xs);

@@ -130,7 +130,8 @@ function App() {
         <div className={styles.titleBarContent}>
           <span className={styles.brand}>
             <span className={styles.brandMark}>◆</span>
-            <span className={styles.brandText}>Trading Agents Lab Pro</span>
+            <span className={styles.brandText}>Trading Agents Lab</span>
+            <span className={styles.brandPro}>Pro</span>
           </span>
           <div className={styles.titleBarRight}>
             <span className={styles.connectionPill}>Standalone</span>
