@@ -32,6 +32,10 @@
      gain-loss semantics and of Clawless cyan. */
   --tal-accent:         #5b74f0;
   --tal-accent-strong:  #8a9bff;
+  /* Brighter indigo for hover states. Some rules reference this with an amber
+     fallback left over from the pre-indigo palette; defining it here keeps
+     hovers on-theme instead of flashing the old amber. */
+  --tal-accent-bright:  #7d92ff;
   --tal-accent-muted:   rgba(91, 116, 240, 0.15);
   --tal-accent-border:  rgba(91, 116, 240, 0.38);
   /* Pro accent-glow: a soft indigo halo for hero/active surfaces. */

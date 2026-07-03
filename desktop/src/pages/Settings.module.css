@@ -582,7 +582,7 @@
 
 .costInputLabel {
   display: grid;
-  grid-template-columns: 100px 1fr;
+  grid-template-columns: 120px 1fr;
   align-items: center;
   gap: var(--tal-space-3);
   font-family: var(--tal-font-mono);
@@ -606,13 +606,50 @@
   border-color: var(--tal-accent);
 }
 
+/* Stacked, full-width field for free-form values (e.g. a license key) that
+   are too long for the narrow numeric-cap boxes above. */
+.wideFieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-2);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary, var(--tal-text-primary));
+}
+
+.wideField {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-default);
+  border-radius: var(--tal-radius-md);
+  color: var(--tal-text-primary);
+  padding: var(--tal-space-2) var(--tal-space-3);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-sm);
+  outline: none;
+}
+
+.wideField:focus {
+  border-color: var(--tal-accent);
+}
+
 .spendRow {
   display: grid;
-  grid-template-columns: 110px 1fr 130px;
+  grid-template-columns: 120px 1fr 130px;
   align-items: center;
   gap: var(--tal-space-3);
   font-family: var(--tal-font-mono);
   font-size: var(--tal-text-xs);
+}
+
+/* When a cap is disabled there is no progress bar, so the value would land in
+   the middle track and look ragged against the metered rows. Span it across
+   the bar + value columns and keep it left-aligned under the bars. */
+.spendValueDisabled {
+  grid-column: 2 / -1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tal-text-muted);
 }
 
 .spendLabel {

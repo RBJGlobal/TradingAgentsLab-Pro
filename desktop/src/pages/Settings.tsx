@@ -1854,18 +1854,19 @@ function LicenseTab() {
 
       <fieldset className={styles.formGroup}>
         <legend className={styles.formLegend}>License key</legend>
-        <div className={styles.costInputRow}>
-          <label className={styles.costInputLabel}>
-            Key
-            <input
-              type="text"
-              className={styles.costInputField}
-              placeholder="Paste your license key"
-              value={keyDraft}
-              onChange={(e) => setKeyDraft(e.target.value)}
-            />
-          </label>
-        </div>
+        <label className={styles.wideFieldLabel}>
+          Key
+          <input
+            type="text"
+            className={styles.wideField}
+            placeholder="Paste your license key"
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+        </label>
         <p className={styles.formHint}>
           Purchase and activation are handled on the Trading Agents Lab Pro
           website. One-time license, no subscription.
@@ -2274,7 +2275,7 @@ function SpendBar({ label, current, cap, isCount }: SpendBarProps) {
     return (
       <div className={styles.spendRow}>
         <span className={styles.spendLabel}>{label}</span>
-        <span className={styles.spendValue}>
+        <span className={styles.spendValueDisabled}>
           {isCount ? current : formatUsdShort(current)} · cap disabled
         </span>
       </div>
