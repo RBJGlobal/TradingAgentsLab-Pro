@@ -9,7 +9,8 @@ import {
 /** Routes the renderer hash router knows about. */
 type Route = 'analyze' | 'watchlist' | 'history' | 'settings';
 
-const REPO_URL = 'https://github.com/RBJGlobal/TradingAgentsLab';
+const SITE_URL = 'https://tradingagentslab.ai';
+const SUPPORT_EMAIL = 'support@tradingagentslab.ai';
 
 function send(win: BrowserWindow | null, channel: string, ...args: unknown[]): void {
   if (!win || win.isDestroyed()) return;
@@ -116,25 +117,23 @@ function buildMenu(getWin: () => BrowserWindow | null): Menu {
     submenu: [
       {
         label: 'Check for Updates…',
-        click: () => {
-          const w = getWin();
-          if (w && !w.isDestroyed()) {
-            w.webContents.send('menu:check-upstream');
-          }
-        },
+        // Opens Settings, where the Updates tab manages app updates. (The old
+        // item pinged the upstream open-source repo, which is not meaningful
+        // for this product.)
+        click: () => navTo(getWin(), 'settings'),
       },
       { type: 'separator' },
       {
-        label: 'Trading Agents Lab on GitHub',
-        click: () => shell.openExternal(REPO_URL),
+        label: 'Visit Trading Agents Lab',
+        click: () => shell.openExternal(SITE_URL),
       },
       {
-        label: 'Report an issue',
-        click: () => shell.openExternal(`${REPO_URL}/issues/new`),
+        label: 'Contact Support',
+        click: () => shell.openExternal(`mailto:${SUPPORT_EMAIL}`),
       },
       { type: 'separator' },
       {
-        label: 'Open Settings → About',
+        label: 'Open Settings',
         click: () => navTo(getWin(), 'settings'),
       },
     ],

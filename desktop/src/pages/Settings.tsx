@@ -89,6 +89,7 @@ type Tab =
   | 'clawless'
   | 'costguard'
   | 'license'
+  | 'updates'
   | 'about';
 
 interface TabDef {
@@ -147,9 +148,15 @@ const TABS: TabDef[] = [
       'Your trial status and license key. One-time license, no subscription. Runs are fully unlocked during the free trial.',
   },
   {
+    id: 'updates',
+    label: 'Updates',
+    description:
+      'Your installed version and app updates. Updates install automatically for the packaged app; you can also check manually.',
+  },
+  {
     id: 'about',
     label: 'About',
-    description: 'Version, license, storage location, and project links.',
+    description: 'What this app is, who makes it, and the legal essentials.',
   },
 ];
 
@@ -440,6 +447,11 @@ function Settings() {
           {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
           {active === 'license' && <LicenseTab />}
+          {active === 'updates' && (
+            <div className={styles.formCard}>
+              <UpdatesSection />
+            </div>
+          )}
           {active === 'about' && (
             <AboutTab availability={availability} secretsCount={listings.length} />
           )}
@@ -1142,55 +1154,30 @@ interface AboutTabProps {
 function AboutTab({ availability, secretsCount }: AboutTabProps) {
   return (
     <div className={styles.formCard}>
+      <p className={styles.aboutIntro}>
+        <strong>Trading Agents Lab Pro</strong> runs a full multi-agent equity
+        research diligence privately on your own machine. Your API key and your
+        analysis stay on your computer: every request goes only to the providers
+        you configure, and nothing is collected or sent to us.
+      </p>
       <dl className={styles.aboutList}>
         <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>Version</dt>
           <dd className={styles.aboutValue}>1.0.0</dd>
         </div>
         <div className={styles.aboutRow}>
+          <dt className={styles.aboutKey}>Made by</dt>
+          <dd className={styles.aboutValue}>
+            RBJ Global LLC
+            <div className={styles.aboutHint}>
+              A standalone trading research companion in the Clawless product
+              family.
+            </div>
+          </dd>
+        </div>
+        <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>License</dt>
-          <dd className={styles.aboutValue}>
-            AGPL-3.0 (project additions) · Apache-2.0 (upstream tradingagents core)
-          </dd>
-        </div>
-        <div className={styles.aboutRow}>
-          <dt className={styles.aboutKey}>Upstream</dt>
-          <dd className={styles.aboutValue}>
-            Forked from{' '}
-            <a
-              className={styles.link}
-              href="https://github.com/TauricResearch/TradingAgents"
-              target="_blank"
-              rel="noreferrer"
-            >
-              TauricResearch/TradingAgents
-            </a>
-            <button
-              type="button"
-              className={styles.refreshLink}
-              onClick={() => {
-                const trigger = (window as unknown as { __talCheckUpstream?: () => void })
-                  .__talCheckUpstream;
-                if (trigger) trigger();
-              }}
-              style={{ marginLeft: 12 }}
-            >
-              Check for updates
-            </button>
-          </dd>
-        </div>
-        <div className={styles.aboutRow}>
-          <dt className={styles.aboutKey}>Repository</dt>
-          <dd className={styles.aboutValue}>
-            <a
-              className={styles.link}
-              href="https://github.com/RBJGlobal/TradingAgentsLab"
-              target="_blank"
-              rel="noreferrer"
-            >
-              RBJGlobal/TradingAgentsLab
-            </a>
-          </dd>
+          <dd className={styles.aboutValue}>Proprietary (Trading Agents Lab Pro)</dd>
         </div>
         <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>Posture</dt>
@@ -1255,7 +1242,10 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           </dd>
         </div>
       </dl>
-      <UpdatesSection />
+      <p className={styles.aboutAttribution}>
+        Built on open-source components licensed under Apache-2.0. Attributions
+        are in the NOTICE file included with the app.
+      </p>
     </div>
   );
 }

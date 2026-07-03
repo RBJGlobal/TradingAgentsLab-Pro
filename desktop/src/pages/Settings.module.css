@@ -252,6 +252,26 @@
   line-height: 1.5;
 }
 
+.aboutIntro {
+  margin: 0 0 var(--tal-space-5);
+  font-size: var(--tal-text-sm);
+  line-height: 1.6;
+  color: var(--tal-text-secondary);
+}
+.aboutIntro strong {
+  color: var(--tal-text-primary);
+}
+
+.aboutAttribution {
+  margin: var(--tal-space-6) 0 0;
+  padding-top: var(--tal-space-4);
+  border-top: 1px solid var(--tal-border-subtle);
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+  line-height: 1.5;
+}
+
 .aboutList {
   display: flex;
   flex-direction: column;
