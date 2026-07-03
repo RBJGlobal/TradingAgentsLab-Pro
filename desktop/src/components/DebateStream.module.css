@@ -279,12 +279,11 @@ a.newsTitle:hover {
   letter-spacing: 0;
 }
 
+/* Typography now comes from the Markdown component (agent content is rendered
+   Markdown, not raw text). This stays a thin container. */
 .messageContent {
-  font-family: var(--tal-font-mono);
   font-size: var(--tal-text-sm);
-  line-height: 1.6;
   color: var(--tal-text-primary);
-  white-space: pre-wrap;
 }
 
 .decision {

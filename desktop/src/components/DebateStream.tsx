@@ -6,6 +6,7 @@ import type {
   Headline,
   NewsHeadlinesEvent,
 } from '../lib/engine-client';
+import Markdown from './Markdown';
 import styles from './DebateStream.module.css';
 
 interface DebateStreamProps {
@@ -529,7 +530,9 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
                     <span className={styles.messageRound}> · round {msg.round}</span>
                   )}
                 </div>
-                <div className={styles.messageContent}>{msg.content}</div>
+                <div className={styles.messageContent}>
+                  <Markdown>{msg.content}</Markdown>
+                </div>
               </article>
             ))}
           </div>
@@ -559,7 +562,9 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
               {(decision.confidence * 100).toFixed(0)}%
             </span>
           </div>
-          <div className={styles.decisionReasoning}>{decision.reasoning}</div>
+          <div className={styles.decisionReasoning}>
+            <Markdown>{decision.reasoning}</Markdown>
+          </div>
           {meta.live && (meta.estimatedCostUsd !== undefined || meta.inputTokens !== undefined) && (
             <div className={styles.decisionUsage}>
               {meta.inputTokens !== undefined && meta.outputTokens !== undefined && (
