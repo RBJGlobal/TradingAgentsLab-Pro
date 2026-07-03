@@ -1504,6 +1504,19 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
 function ChannelsTab() {
   return (
     <div>
+      <div className={styles.channelsHero}>
+        <span className={styles.channelsHeroIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor">
+            <path d="M21.94 4.3 18.6 20.02c-.25 1.11-.91 1.38-1.85.86l-5.1-3.76-2.46 2.37c-.27.27-.5.5-1.03.5l.37-5.2 9.47-8.56c.41-.37-.09-.57-.64-.2L5.66 13.2l-5.03-1.57c-1.1-.34-1.12-1.1.23-1.62l19.66-7.58c.91-.34 1.71.2 1.42 1.87Z" />
+          </svg>
+        </span>
+        <div className={styles.channelsHeroText}>
+          <span className={styles.channelsHeroTitle}>Telegram</span>
+          <span className={styles.channelsHeroSubtitle}>
+            Connect a Telegram bot to run the Diligence from your phone.
+          </span>
+        </div>
+      </div>
       <TelegramBotPanel />
     </div>
   );

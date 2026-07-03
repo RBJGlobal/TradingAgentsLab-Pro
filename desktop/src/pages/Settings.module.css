@@ -486,11 +486,15 @@
   flex-direction: column;
   gap: var(--tal-space-3);
   padding: var(--tal-space-3) 0;
-  border-top: 1px solid var(--tal-border-subtle);
+  /* These groups are <fieldset>s; zero out the browser's default fieldset
+     border+margin (the legend-notched box that read as an unfinished table)
+     and rely on the legend + whitespace for grouping instead. */
+  border: 0;
+  margin: 0;
+  min-inline-size: 0;
 }
 
 .formGroup:first-of-type {
-  border-top: 0;
   padding-top: 0;
 }
 
@@ -535,7 +539,6 @@
   justify-content: flex-end;
   gap: var(--tal-space-3);
   padding-top: var(--tal-space-3);
-  border-top: 1px solid var(--tal-border-subtle);
 }
 
 .formSave {
@@ -699,6 +702,59 @@
 
 .refreshLink:hover {
   color: var(--tal-accent-bright, #ffba3c);
+}
+
+/* Channels tab — Telegram-branded hero so the channel is instantly
+   recognizable. Uses Telegram's own blue (not the app indigo) on purpose. */
+.channelsHero {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-4);
+  padding: var(--tal-space-4) var(--tal-space-5);
+  border-radius: var(--tal-radius-lg, 12px);
+  border: 1px solid rgba(42, 158, 217, 0.45);
+  background: linear-gradient(
+    135deg,
+    rgba(55, 174, 226, 0.20),
+    rgba(30, 150, 200, 0.08)
+  );
+  box-shadow: 0 0 0 1px rgba(42, 158, 217, 0.12),
+    0 10px 28px rgba(30, 150, 200, 0.16);
+}
+
+.channelsHeroIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(160deg, #37aee2, #1e96c8);
+  box-shadow: 0 4px 14px rgba(30, 150, 200, 0.5);
+  /* nudge the paper-plane to sit visually centered */
+  padding-right: 2px;
+}
+
+.channelsHeroText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.channelsHeroTitle {
+  font-size: var(--tal-text-lg, 1.125rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #4cc2f0;
+}
+
+.channelsHeroSubtitle {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-secondary, var(--tal-text-muted));
+  line-height: 1.5;
 }
 
 /* Webhooks tab */
