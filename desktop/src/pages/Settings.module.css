@@ -252,6 +252,25 @@
   line-height: 1.5;
 }
 
+.avCallout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tal-space-5);
+  margin-top: var(--tal-space-4);
+  padding: var(--tal-space-4) var(--tal-space-5);
+  background: var(--tal-accent-muted);
+  border: 1px solid var(--tal-accent-border);
+  border-radius: var(--tal-radius-md);
+}
+.avCalloutText {
+  min-width: 0;
+}
+.avCalloutText strong {
+  color: var(--tal-text-primary);
+  font-size: var(--tal-text-sm);
+}
+
 .aboutIntro {
   margin: 0 0 var(--tal-space-5);
   font-size: var(--tal-text-sm);

@@ -147,6 +147,9 @@ interface TradingAgentsLabBridge {
   consent: ConsentBridge;
   updates: UpdatesBridge;
   secrets: SecretsBridge;
+  avSignup: {
+    getFreeKey: () => Promise<string | null>;
+  };
   oauth: OAuthBridge;
   onMenuCommand: (
     channel: MenuChannel,

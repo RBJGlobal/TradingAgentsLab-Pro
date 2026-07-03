@@ -163,6 +163,12 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
       return () => ipcRenderer.removeListener('secrets:recovered', wrapped);
     },
   },
+  avSignup: {
+    // Opens the in-app Alpha Vantage free-key window; resolves with the
+    // captured key, or null if the user closed it without finishing.
+    getFreeKey: (): Promise<string | null> =>
+      ipcRenderer.invoke('av-signup:start'),
+  },
   oauth: {
     openaiStart: (): Promise<OAuthStartResult> =>
       ipcRenderer.invoke('oauth:openai:start'),

@@ -9,6 +9,7 @@ import {
   type EngineHandshake,
 } from './engine-runner';
 import { registerAppMenu } from './menu';
+import { openAlphaVantageSignup } from './av-signup';
 import { OpenAIOAuthService } from './oauth-openai';
 import {
   deleteSecret,
@@ -162,6 +163,10 @@ ipcMain.handle('secrets:get', (_evt, key: string) => {
 ipcMain.handle('secrets:list', () => listSecrets());
 
 ipcMain.handle('secrets:delete', (_evt, key: string) => deleteSecret(key));
+
+// In-app Alpha Vantage free-key signup. Resolves with the captured key (or
+// null if the user closed the window without finishing). See av-signup.ts.
+ipcMain.handle('av-signup:start', () => openAlphaVantageSignup(win));
 
 // ---- OAuth (OpenAI Codex / ChatGPT subscription) -------------------------
 //

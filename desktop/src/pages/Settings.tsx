@@ -432,6 +432,7 @@ function Settings() {
                 disabled={!availability?.available}
                 onChange={refresh}
               />
+              <AlphaVantageSignupCallout onSaved={refresh} />
             </>
           )}
           {active === 'clawless' && (
@@ -1733,6 +1734,66 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
 }
 
 // ---- Cost Guard tab --------------------------------------------------------
+
+function AlphaVantageSignupCallout({ onSaved }: { onSaved: () => void }) {
+  // In-app free-key signup: open Alpha Vantage's real page in an isolated
+  // window, capture the issued key, and save it, so the user never has to
+  // leave the app (and never reaches the competitor promo AV shows below the
+  // key). Degrades gracefully: if capture misses, the user pastes the key into
+  // the row above.
+  const [status, setStatus] = useState<
+    'idle' | 'opening' | 'saved' | 'cancelled' | 'error'
+  >('idle');
+
+  const onGetKey = async () => {
+    const bridge = window.tradingAgentsLab;
+    if (!bridge?.avSignup) return;
+    setStatus('opening');
+    try {
+      const key = await bridge.avSignup.getFreeKey();
+      if (!key) {
+        setStatus('cancelled');
+        return;
+      }
+      await bridge.secrets.set('data:alpha-vantage', key);
+      setStatus('saved');
+      onSaved();
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  return (
+    <div className={styles.avCallout}>
+      <div className={styles.avCalloutText}>
+        <strong>No Alpha Vantage key yet?</strong>
+        <div className={styles.formHint}>
+          Get one free without leaving the app. We open the signup, capture your
+          key the moment it is issued, and fill it in for you.
+        </div>
+        {status === 'saved' && (
+          <p className={styles.formSuccess}>Key captured and saved.</p>
+        )}
+        {status === 'cancelled' && (
+          <p className={styles.formHint}>Window closed before a key was issued.</p>
+        )}
+        {status === 'error' && (
+          <p className={styles.formError}>
+            Could not complete the signup. You can paste a key manually above.
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        className={styles.formSave}
+        onClick={() => void onGetKey()}
+        disabled={status === 'opening'}
+      >
+        {status === 'opening' ? 'Opening…' : 'Get a free key'}
+      </button>
+    </div>
+  );
+}
 
 function LicenseTab() {
   // Trial status + license-key entry. Validation is a seam stub today (see
