@@ -86,7 +86,6 @@ type Tab =
   | 'analysis'
   | 'webhooks'
   | 'channels'
-  | 'clawless'
   | 'costguard'
   | 'license'
   | 'updates'
@@ -128,12 +127,6 @@ const TABS: TabDef[] = [
     label: 'Channels',
     description:
       'Two-way integrations where you can message Trading Agents Lab from outside the desktop app and get a Diligence back. Telegram is the first channel. More may follow as users ask.',
-  },
-  {
-    id: 'clawless',
-    label: 'Clawless',
-    description:
-      'Optional connector. Routes LLM calls through a Clawless gateway when one is reachable.',
   },
   {
     id: 'costguard',
@@ -273,27 +266,6 @@ const DATA_PROVIDERS: SecretRow[] = [
     pillLabel: 'Analysts',
     pillVariant: 'default',
     placeholder: 'Alpha Vantage API key',
-  },
-];
-
-const CLAWLESS_FIELDS: SecretRow[] = [
-  {
-    secretKey: 'clawless:gateway-url',
-    name: 'Gateway URL',
-    note: 'Default port for the OpenClaw gateway.',
-    pillLabel: 'Connector',
-    pillVariant: 'default',
-    fieldType: 'text',
-    placeholder: 'ws://127.0.0.1:18789',
-  },
-  {
-    secretKey: 'clawless:gateway-token',
-    name: 'Gateway token',
-    note:
-      'Grants broad read access; store via OS keychain only. Paste from your Clawless settings.',
-    pillLabel: 'Connector',
-    pillVariant: 'default',
-    placeholder: 'paste from Clawless settings',
   },
 ];
 
@@ -437,14 +409,6 @@ function Settings() {
                 onSaved={refresh}
               />
             </>
-          )}
-          {active === 'clawless' && (
-            <SecretRowList
-              rows={CLAWLESS_FIELDS}
-              listingByKey={listingByKey}
-              disabled={!availability?.available}
-              onChange={refresh}
-            />
           )}
           {active === 'analysis' && <ProAnalysisTab />}
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
