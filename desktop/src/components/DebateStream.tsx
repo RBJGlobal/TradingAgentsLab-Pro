@@ -312,6 +312,19 @@ const PHASE_DESCRIPTION: Record<string, string> = {
   risk: 'Aggressive · Conservative · Neutral · Portfolio Manager',
 };
 
+/* Present-tense narration of what the active phase is doing, for the live
+   status banner. Each agent turn takes 20-60s of silent LLM work, so this plus
+   the always-moving shimmer bar and ticking clock reassures the user that the
+   run is progressing rather than stuck. */
+const PHASE_ACTIVITY: Record<string, string> = {
+  analysts: 'Analysts are gathering market data and forming their views',
+  researchers: 'Researchers are debating the bull and bear case',
+  trader: 'The trader is shaping a concrete plan',
+  risk: 'Risk managers are stress-testing the decision',
+};
+
+const TYPICAL_DURATION = 'Typically 4 to 5 minutes';
+
 function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const start = findStart(events);
   const summary = findSummary(events);
@@ -373,6 +386,19 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
     startedAtRef.current !== null
       ? (endedAtRef.current ?? now) - startedAtRef.current
       : null;
+
+  // Live-status inputs. A full run is 4-5 min with 20-60s of silent LLM work
+  // between agent turns, so we drive continuous motion (spinner + shimmer bar +
+  // ticking clock) and a present-tense narration of the active phase so the run
+  // never reads as stuck. Only while genuinely streaming toward a decision.
+  const streaming = isStreaming && decision === null && terminal === null;
+  const activePhase = progress.phases.find((p) => p.state === 'active')?.phase ?? null;
+  const usingTools = events[events.length - 1]?.type === 'agent.activity';
+  const liveNarration = usingTools
+    ? 'Fetching market data and running the tools'
+    : activePhase
+      ? PHASE_ACTIVITY[activePhase] ?? 'Working through the diligence'
+      : 'Starting the diligence';
 
   return (
     <section className={styles.stream}>
@@ -436,6 +462,23 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
           freezes on the final state so the user can see "12 of 12
           agents · 1m 24s" alongside the conclusion. */}
       <div className={styles.progress} aria-label="Debate progress">
+        {streaming && (
+          <div className={styles.liveStatus} aria-live="polite">
+            <div className={styles.liveStatusRow}>
+              <span className={styles.liveSpinner} aria-hidden="true" />
+              <span className={styles.liveNarration}>{liveNarration}</span>
+              <span className={styles.liveTiming}>
+                {elapsedMs !== null && (
+                  <span className={styles.liveElapsed}>{formatElapsed(elapsedMs)}</span>
+                )}
+                <span className={styles.liveHint}>{TYPICAL_DURATION}</span>
+              </span>
+            </div>
+            <div className={styles.liveBar} aria-hidden="true">
+              <span className={styles.liveBarShimmer} />
+            </div>
+          </div>
+        )}
         <div className={styles.progressPhases}>
           {progress.phases.map((p) => (
             <div

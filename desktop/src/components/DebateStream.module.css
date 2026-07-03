@@ -504,6 +504,94 @@ a.newsTitle:hover {
   padding: var(--tal-space-3) var(--tal-space-5);
 }
 
+/* Live status — continuous-motion reassurance during a run. Agent turns are
+   20-60s of silent LLM work, so the spinner, the sliding shimmer bar, and the
+   ticking clock keep something visibly moving the whole time. */
+.liveStatus {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tal-space-3);
+  padding-bottom: var(--tal-space-1);
+}
+
+.liveStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--tal-space-3);
+}
+
+.liveSpinner {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--tal-accent-muted);
+  border-top-color: var(--tal-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.liveNarration {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--tal-font-sans);
+  font-size: var(--tal-text-sm);
+  color: var(--tal-text-primary);
+}
+
+.liveTiming {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tal-space-2);
+  flex-shrink: 0;
+  font-family: var(--tal-font-mono);
+}
+
+.liveElapsed {
+  font-size: var(--tal-text-sm);
+  color: var(--tal-accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.liveHint {
+  font-size: var(--tal-text-xs);
+  color: var(--tal-text-muted);
+}
+
+.liveBar {
+  position: relative;
+  height: 3px;
+  width: 100%;
+  background: var(--tal-bg-input);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.liveBarShimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 35%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--tal-accent), transparent);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
 .progressPhases {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
