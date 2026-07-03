@@ -432,7 +432,10 @@ function Settings() {
                 disabled={!availability?.available}
                 onChange={refresh}
               />
-              <AlphaVantageSignupCallout onSaved={refresh} />
+              <AlphaVantageSignupCallout
+                hasKey={listingByKey.has('data:alpha-vantage')}
+                onSaved={refresh}
+              />
             </>
           )}
           {active === 'clawless' && (
@@ -1735,7 +1738,13 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
 
 // ---- Cost Guard tab --------------------------------------------------------
 
-function AlphaVantageSignupCallout({ onSaved }: { onSaved: () => void }) {
+function AlphaVantageSignupCallout({
+  hasKey,
+  onSaved,
+}: {
+  hasKey: boolean;
+  onSaved: () => void;
+}) {
   // In-app free-key signup: open Alpha Vantage's real page in an isolated
   // window, capture the issued key, and save it, so the user never has to
   // leave the app (and never reaches the competitor promo AV shows below the
@@ -1744,6 +1753,13 @@ function AlphaVantageSignupCallout({ onSaved }: { onSaved: () => void }) {
   const [status, setStatus] = useState<
     'idle' | 'opening' | 'saved' | 'cancelled' | 'error'
   >('idle');
+
+  // Once a key is stored the row above already shows CONNECTED, so this
+  // "get one free" prompt is not just redundant, it is confusing (it reads as
+  // "no key yet" beside a connected key). Hide it entirely while a key exists;
+  // it comes back on its own if the user deletes the key (the parent re-renders
+  // with hasKey=false).
+  if (hasKey) return null;
 
   const onGetKey = async () => {
     const bridge = window.tradingAgentsLab;
