@@ -308,6 +308,11 @@ export interface AnalyzeRequest {
    * Keygen/Ed25519 validation is a true engine-side drop-in with the token
    * already on the wire. Undefined during the trial (no key yet). */
   license?: string;
+  /** Optional Alpha Vantage data key. Forwarded so the Pro engine can unlock
+   * the news / social / fundamentals analysts, which read it at tool-call time.
+   * Absent means market-only (free, yfinance). The engine persists no secrets;
+   * this is sent per run. */
+  alpha_vantage_key?: string;
   /** Optional per-stream data provider override (e.g. Alpaca). Engine
    * falls through to yfinance default when absent. */
   data_config?: DataConfig;
@@ -1022,6 +1027,8 @@ export async function streamDebate(
         // License token for the engine-side pre-flight (inert while the
         // engine check is a stub; dropped by JSON.stringify when undefined).
         license: req.license,
+        // Optional Alpha Vantage data key (unlocks non-market analysts).
+        alpha_vantage_key: req.alpha_vantage_key,
       }),
     );
   });

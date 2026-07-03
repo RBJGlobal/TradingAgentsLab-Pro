@@ -344,6 +344,7 @@ async def full_debate(
     api_key: Optional[str] = None,
     auth_kind: str = "api_key",
     reservation_id: Optional[str] = None,
+    alpha_vantage_key: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """Drive the full LangGraph diligence graph, yielding UI-compatible events.
 
@@ -382,6 +383,22 @@ async def full_debate(
     # pre-config failure still finalizes cleanly (priced at zero: no LLM calls).
     try:
         merged = _build_config(config)
+
+        # Data-tool key (Alpha Vantage) must be in the environment for the WHOLE
+        # run: the library's dataflows tools (news / social / fundamentals) read
+        # it at tool-CALL time on the astream worker thread, mid-run, NOT at
+        # construction, so the LLM-key construction-window trick does not apply.
+        # The renderer is the source of truth (it sends the current key per run),
+        # so we set it when present and CLEAR it when absent: that way a user who
+        # removes their key in Settings actually stops using it, rather than a
+        # stale key lingering in the process env. No finally-restore: the Pro
+        # engine is a single-user sidecar and a batch shares one key config
+        # (no mixed keyed/keyless concurrency to race). A market-only run never
+        # reads the key, so clearing it there is harmless.
+        if alpha_vantage_key and alpha_vantage_key.strip():
+            os.environ["ALPHA_VANTAGE_API_KEY"] = alpha_vantage_key.strip()
+        else:
+            os.environ.pop("ALPHA_VANTAGE_API_KEY", None)
 
         # BYO-key injection. The upstream library's LLM clients capture the
         # provider API key from the standard env var at construction time and do

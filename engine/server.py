@@ -687,6 +687,10 @@ def build_app(*, token: str) -> FastAPI:
                         if isinstance(raw_cap, (int, float)) and raw_cap > 0
                         else None
                     )
+                    # Optional Alpha Vantage data key: unlocks the news / social
+                    # / fundamentals analysts. Absent -> market-only (yfinance,
+                    # free). Sent per-run (the engine persists no secrets).
+                    av_key = start.get("alpha_vantage_key") or None
                     debate_events = full_debate(
                         ticker,
                         trade_date,
@@ -696,6 +700,7 @@ def build_app(*, token: str) -> FastAPI:
                         api_key=config.bearer_token,
                         auth_kind=config.auth_kind,
                         reservation_id=reservation_id,
+                        alpha_vantage_key=av_key,
                     )
                 else:
                     debate_events = live_debate(

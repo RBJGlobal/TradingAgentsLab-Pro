@@ -259,6 +259,14 @@ const DATA_PROVIDERS: SecretRow[] = [
     pillVariant: 'default',
     placeholder: 'data secret key',
   },
+  {
+    secretKey: 'data:alpha-vantage',
+    name: 'Alpha Vantage: API key',
+    note: 'Unlocks the News, Social, and Fundamentals analysts (they source data from Alpha Vantage). Without it, keep the Analysis tab on Market only, which runs free on yfinance. Alpha Vantage offers a free key; the key is sent only to Alpha Vantage on your behalf, never stored by us server-side.',
+    pillLabel: 'Analysts',
+    pillVariant: 'default',
+    placeholder: 'Alpha Vantage API key',
+  },
 ];
 
 const CLAWLESS_FIELDS: SecretRow[] = [
