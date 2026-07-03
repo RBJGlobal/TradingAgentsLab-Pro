@@ -547,6 +547,9 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
         >
           <div className={styles.decisionLabel}>
             Decision
+            {decision.rating && (
+              <span className={styles.decisionRating}>{decision.rating}</span>
+            )}
             {meta.live && (
               <span className={styles.decisionLiveBadge}>
                 Live · {meta.provider ?? 'openai'} · {meta.model ?? '?'}
@@ -563,6 +566,26 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             </span>
           </div>
           <div className={styles.decisionReasoning}>
+            {(decision.price_target != null || decision.time_horizon) && (
+              <div className={styles.decisionTargets}>
+                {decision.price_target != null && (
+                  <span className={styles.decisionTarget}>
+                    <span className={styles.decisionTargetLabel}>Price target</span>
+                    <span className={styles.decisionTargetValue}>
+                      {decision.price_target.toFixed(2)}
+                    </span>
+                  </span>
+                )}
+                {decision.time_horizon && (
+                  <span className={styles.decisionTarget}>
+                    <span className={styles.decisionTargetLabel}>Horizon</span>
+                    <span className={styles.decisionTargetValue}>
+                      {decision.time_horizon}
+                    </span>
+                  </span>
+                )}
+              </div>
+            )}
             <Markdown>{decision.reasoning}</Markdown>
           </div>
           {meta.live && (meta.estimatedCostUsd !== undefined || meta.inputTokens !== undefined) && (

@@ -296,7 +296,7 @@ a.newsTitle:hover {
   grid-template-rows: auto auto auto;
   column-gap: var(--tal-space-6);
   row-gap: var(--tal-space-2);
-  box-shadow: var(--tal-shadow-md);
+  box-shadow: var(--tal-shadow-md), var(--tal-accent-glow);
   animation: slide-in 240ms var(--tal-ease-out);
 }
 
@@ -336,6 +336,53 @@ a.newsTitle:hover {
   font-size: 0.6875rem;
   letter-spacing: 0.04em;
   text-transform: none;
+}
+
+/* Pro: the Portfolio Manager's native 5-tier rating (Buy / Overweight / Hold /
+   Underweight / Sell) as a solid amber pill so it reads as the headline call,
+   more precise than the 3-tier BUY/SELL/HOLD action word below it. */
+.decisionRating {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--tal-accent);
+  color: var(--tal-text-inverse);
+  font-family: var(--tal-font-sans);
+  font-weight: 650;
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+/* Pro: price-target + horizon chips, above the reasoning in the decision card. */
+.decisionTargets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tal-space-3);
+  margin-bottom: var(--tal-space-4);
+}
+.decisionTarget {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--tal-space-2) var(--tal-space-4);
+  background: var(--tal-bg-input);
+  border: 1px solid var(--tal-border-subtle);
+  border-radius: var(--tal-radius-md);
+}
+.decisionTargetLabel {
+  font-family: var(--tal-font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tal-text-muted);
+}
+.decisionTargetValue {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-base);
+  color: var(--tal-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .decisionUsage {
