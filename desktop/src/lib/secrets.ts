@@ -23,7 +23,7 @@ export interface SecretsAvailability {
 
 function bridge() {
   if (!window.tradingAgentsLab?.secrets) {
-    throw new Error('secrets bridge not available — preload not loaded');
+    throw new Error('secrets bridge not available: preload not loaded');
   }
   return window.tradingAgentsLab.secrets;
 }

@@ -27,7 +27,7 @@ export interface UpstreamCheckResult {
 export async function checkUpstream(): Promise<UpstreamCheckResult> {
   const bridge = window.tradingAgentsLab;
   if (!bridge?.checkUpstream) {
-    throw new Error('upstream-check bridge not available — preload not loaded');
+    throw new Error('upstream-check bridge not available: preload not loaded');
   }
   return bridge.checkUpstream();
 }

@@ -66,8 +66,8 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
 
   const lines: string[] = [];
   const header = start
-    ? `# TradingAgentsLab — ${start.ticker} · ${start.trade_date}`
-    : '# TradingAgentsLab — debate transcript';
+    ? `# TradingAgentsLab: ${start.ticker} · ${start.trade_date}`
+    : '# TradingAgentsLab: debate transcript';
   lines.push(header, '');
   lines.push(`_Generated ${new Date().toISOString()}_`, '');
   lines.push(
@@ -78,7 +78,7 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
   if (decision) {
     lines.push('## Decision', '');
     lines.push(
-      `**${decision.action}** — confidence ${(decision.confidence * 100).toFixed(0)}%`,
+      `**${decision.action}** · confidence ${(decision.confidence * 100).toFixed(0)}%`,
       '',
     );
     lines.push(decision.reasoning, '');
@@ -89,7 +89,7 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
     lines.push(`- Last close: **${summary.last_close.toFixed(2)}**`);
     const sign = summary.period_change_pct >= 0 ? '+' : '';
     lines.push(`- Period change: **${sign}${summary.period_change_pct.toFixed(2)}%**`);
-    lines.push(`- Range: ${summary.period_low.toFixed(2)}–${summary.period_high.toFixed(2)}`);
+    lines.push(`- Range: ${summary.period_low.toFixed(2)} to ${summary.period_high.toFixed(2)}`);
     lines.push(`- Avg daily volume: ${Math.round(summary.avg_volume).toLocaleString()}`);
     lines.push(`- Sessions: ${summary.sessions}`);
     lines.push(`- Source: ${summary.source} · as of ${summary.as_of}`);

@@ -699,7 +699,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         <div className={styles.pageHeaderTitleBlock}>
           <h1 className={styles.pageTitle}>Analyze</h1>
           <p className={styles.pageSubtitle}>
-            Run <strong>the Diligence</strong> on a ticker — twelve AI agents
+            Run <strong>the Diligence</strong> on a ticker. Twelve AI agents
             (analyst, researcher, trader, risk-manager) deliberate from
             independent angles and converge on a recommendation. Educational
             research only; not investment advice.
@@ -722,7 +722,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               const isOpenAIOAuth = p === 'openai' && openaiAuthKind === 'oauth';
               const label = configured
                 ? `${PROVIDER_LABEL[p]}${isOpenAIOAuth ? ' (OAuth)' : ''}`
-                : `${PROVIDER_LABEL[p]} — configure in Settings`;
+                : `${PROVIDER_LABEL[p]} (configure in Settings)`;
               return (
                 <option key={p} value={p} disabled={!configured}>
                   {label}
@@ -731,7 +731,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             })}
             {configuredProviders.size === 0 && (
               <option value="" disabled>
-                Stub debate — no LLM configured
+                Stub debate (no LLM configured)
               </option>
             )}
           </select>
@@ -748,7 +748,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
                 <option key={m.id} value={m.id}>
                   {m.label}
                   {m.recommended ? ' (recommended)' : ''}
-                  {m.note ? ` — ${m.note}` : ''}
+                  {m.note ? ` (${m.note})` : ''}
                 </option>
               ))}
             </select>
@@ -826,13 +826,13 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         </div>
         <div className={styles.cardFooter}>
           <p className={styles.helper}>
-            {engineStatus === 'pending' && 'Engine starting, please wait — Python sidecar is coming online.'}
+            {engineStatus === 'pending' && 'Engine starting, please wait. Python sidecar is coming online.'}
             {engineStatus === 'running' && !isStreaming && activeProvider && activeModel &&
-              `Live debate — ${PROVIDER_LABEL[activeProvider]}${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? ' (OAuth)' : ''} · ${activeModel}, capped per agent.`}
+              `Live debate: ${PROVIDER_LABEL[activeProvider]}${openaiAuthKind === 'oauth' && activeProvider === 'openai' ? ' (OAuth)' : ''} · ${activeModel}, capped per agent.`}
             {engineStatus === 'running' && !isStreaming && !activeProvider &&
-              'Stub debate — paste an LLM key in Settings to switch to live agents.'}
+              'Stub debate. Paste an LLM key in Settings to switch to live agents.'}
             {engineStatus === 'running' && isStreaming &&
-              'Streaming agent debate from sidecar — Stop to abort.'}
+              'Streaming agent debate from sidecar. Stop to abort.'}
             {engineStatus === 'error' &&
               `Engine could not start after several retries: ${engineError ?? 'unknown error'}. Use the app menu (⏻ top right) to Restart.`}
           </p>
@@ -869,7 +869,7 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         Agents Lab is <strong>not a registered investment advisor</strong> and
         does not provide investment, financial, legal, or tax advice. The
         multi-agent LLM analyses on this page may be inaccurate, incomplete,
-        or outdated — large language models can and do hallucinate. Nothing
+        or outdated: large language models can and do hallucinate. Nothing
         produced by this software is a recommendation to buy, sell, or hold
         any security, cryptocurrency, or other asset. Consult a qualified
         financial professional before making any investment decision. You

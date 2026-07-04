@@ -40,7 +40,7 @@ export interface OAuthCredentials {
 
 function bridge() {
   if (!window.tradingAgentsLab?.oauth) {
-    throw new Error('oauth bridge not available — preload not loaded');
+    throw new Error('oauth bridge not available: preload not loaded');
   }
   return window.tradingAgentsLab.oauth;
 }

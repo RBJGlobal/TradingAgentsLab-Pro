@@ -526,7 +526,7 @@ if (typeof window !== 'undefined' && window.tradingAgentsLab?.onEngineExited) {
 export async function handshake(): Promise<EngineHandshake> {
   if (cachedHandshake) return cachedHandshake;
   if (!window.tradingAgentsLab?.getEngineHandshake) {
-    throw new Error('engine bridge not available — preload not loaded');
+    throw new Error('engine bridge not available: preload not loaded');
   }
   const result = await window.tradingAgentsLab.getEngineHandshake();
   cachedHandshake = result;
