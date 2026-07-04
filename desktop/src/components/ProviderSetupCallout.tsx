@@ -15,9 +15,8 @@ export default function ProviderSetupCallout() {
         <p className={styles.text}>
           No LLM provider is set up yet, so the Diligence runs a built-in sample
           rather than a real multi-agent analysis. Add a provider to unlock the
-          full thing. OpenAI works free with your ChatGPT plan (OAuth
-          recommended), or paste an API key for OpenAI, Anthropic, OpenRouter,
-          or Google Gemini.
+          full thing. Paste an API key for OpenAI, Anthropic, OpenRouter, or
+          Google Gemini.
         </p>
       </div>
       <button

@@ -97,12 +97,19 @@ interface TabDef {
   description: string;
 }
 
+// OpenAI OAuth (ChatGPT-subscription) is hidden in Pro v1: it cannot drive the
+// real LangGraph graph yet. The graph is tool-heavy, but the Codex /responses
+// adapter is text-only (no tool-calling), so OAuth would silently fail against
+// the real engine. Flip this to true in v1.1 once the Codex tool-calling +
+// LangChain BaseChatModel wrapper lands (backlog: "OAuth drives the real graph").
+const OAUTH_ENABLED = false;
+
 const TABS: TabDef[] = [
   {
     id: 'llm',
     label: 'LLM Providers',
     description:
-      'Bring your own API key, sign in with OpenAI OAuth, or auto-detect a local runtime (Ollama / LM Studio). Anthropic API key only (OAuth is banned by their TOS).',
+      'Bring your own API key for OpenAI, Anthropic, OpenRouter, or Google Gemini, or auto-detect a local runtime (Ollama / LM Studio).',
   },
   {
     id: 'data',
@@ -176,10 +183,10 @@ interface SecretRow {
 const LLM_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'llm:openai',
-    name: 'OpenAI (API key fallback)',
-    note: 'GPT-5 and GPT-4o family via API key. The OAuth row above wins when both are configured. Keep an API key here only if you want a manual fallback.',
-    pillLabel: 'Fallback',
-    pillVariant: 'optional',
+    name: 'OpenAI',
+    note: 'GPT-5 and GPT-4o family via API key.',
+    pillLabel: 'API key',
+    pillVariant: 'default',
     placeholder: 'sk-…',
     testProvider: 'openai',
   },
@@ -382,7 +389,7 @@ function Settings() {
 
           {active === 'llm' && (
             <>
-              <OpenAIOAuthRow disabled={!availability?.available} />
+              {OAUTH_ENABLED && <OpenAIOAuthRow disabled={!availability?.available} />}
               <SecretRowList
                 rows={LLM_PROVIDERS}
                 listingByKey={listingByKey}
