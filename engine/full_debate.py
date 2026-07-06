@@ -84,6 +84,15 @@ _RISK_NODES: Dict[str, str] = {
     "Portfolio Manager": "portfolio_manager",
 }
 
+# Which risk_debate_state field holds THIS node's own line. The state keeps
+# one field per speaker (all persist across turns), so transcript extraction
+# must select by speaker — see _extract_content.
+_RISK_NODE_RESPONSE_KEY: Dict[str, str] = {
+    "Aggressive Analyst": "current_aggressive_response",
+    "Conservative Analyst": "current_conservative_response",
+    "Neutral Analyst": "current_neutral_response",
+}
+
 _PHASE_OF: Dict[str, str] = {}
 for _n in _ANALYST_NODES:
     _PHASE_OF[_n] = "analysts"
@@ -588,15 +597,17 @@ def _extract_content(node: str, delta: Dict[str, Any], phase: str) -> str:
         return str(inv["current_response"])
     if inv.get("judge_decision"):
         return str(inv["judge_decision"])
+    # Risk turns need a node-keyed lookup, NOT first-non-empty: the risk
+    # debate state carries a SEPARATE current_*_response field per speaker
+    # and each node re-emits the whole state, so the aggressive analyst's
+    # line (written first, never cleared) used to be returned for the
+    # conservative / neutral / PM turns too.
     risk = delta.get("risk_debate_state") or {}
-    for key in (
-        "current_aggressive_response",
-        "current_conservative_response",
-        "current_neutral_response",
-        "judge_decision",
-    ):
-        if risk.get(key):
-            return str(risk[key])
+    risk_key = _RISK_NODE_RESPONSE_KEY.get(node)
+    if risk_key and risk.get(risk_key):
+        return str(risk[risk_key])
+    if node == "Portfolio Manager" and risk.get("judge_decision"):
+        return str(risk["judge_decision"])
     if delta.get("trader_investment_plan"):
         return str(delta["trader_investment_plan"])
     if delta.get("final_trade_decision"):
