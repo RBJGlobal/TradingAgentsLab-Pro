@@ -93,6 +93,15 @@ function trialStart(now: number): number {
  * launch, and 'expired' past it.
  */
 export function getLicenseStatus(now: number = Date.now()): LicenseStatus {
+  // Dev-stack bypass: the trial clock is real wall-time from first launch,
+  // so any dev profile older than TRIAL_DAYS would lock the founder out of
+  // dev runs. Scoped to the Vite dev server ONLY: vitest runs with
+  // MODE === 'test' (so the trial tests below keep exercising real logic)
+  // and packaged builds are 'production' (gate fully armed). Not a magic
+  // key — this branch cannot exist in a shipped artifact.
+  if (import.meta.env.MODE === 'development') {
+    return { state: 'licensed' };
+  }
   const key = getLicenseKey();
   if (key && validateLicenseKey(key)) {
     return { state: 'licensed' };
