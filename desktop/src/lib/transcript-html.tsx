@@ -69,13 +69,17 @@ const TIER3 =
   'based on this analysis. The maintainers and contributors accept no liability for ' +
   'losses arising from use of this software.';
 
-// Brand trio: dark base, warm amber accent, monospace identity accents.
-// System font stacks only — the document must be truly standalone.
+// Palette mirrors the Pro app's design tokens (src/styles/tokens.css):
+// #0d1117 base, indigo accent #5b74f0, and the same text/border ramp — so
+// the exported page reads as the same product as the app window. Values are
+// copied, not imported: the document must be truly standalone, and CSS
+// custom properties can't cross a file boundary. If tokens.css shifts,
+// refresh these. System font stacks only (no bundled fonts in the export).
 const STYLE = `
   :root {
-    --bg: #14110c; --panel: #1d1913; --panel-2: #232019; --line: #3a342a;
-    --text: #e8e2d5; --muted: #9c937f; --amber: #e8a33d; --amber-dim: #b57e2c;
-    --buy: #7fb069; --sell: #d9704a; --hold: #e8a33d;
+    --bg: #0d1117; --panel: #161b22; --panel-2: #1c232c; --line: #30363d;
+    --text: #e6edf3; --muted: #9ea7b3; --accent: #5b74f0; --accent-strong: #8a9bff;
+    --buy: #3fb950; --sell: #f85149; --hold: #9ea7b3;
     --mono: ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace;
     --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   }
@@ -86,14 +90,14 @@ const STYLE = `
   }
   .wrap { max-width: 860px; margin: 0 auto; padding: 32px 24px 64px; }
   .brand { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--amber); }
-  .banner { border: 1px solid var(--line); border-left: 3px solid var(--amber);
+    text-transform: uppercase; color: var(--accent-strong); }
+  .banner { border: 1px solid var(--line); border-left: 3px solid var(--accent-strong);
     background: var(--panel); padding: 10px 14px; margin: 20px 0; border-radius: 6px;
     color: var(--muted); font-size: 13.5px; }
   h1 { font-family: var(--mono); font-size: 26px; margin: 14px 0 2px; }
   .meta { color: var(--muted); font-family: var(--mono); font-size: 13px; }
   h2.section { font-family: var(--mono); font-size: 15px; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--amber); border-bottom: 1px solid var(--line);
+    text-transform: uppercase; color: var(--accent-strong); border-bottom: 1px solid var(--line);
     padding-bottom: 6px; margin: 40px 0 16px; }
   .decision { background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 20px 22px; margin-top: 16px; }
@@ -110,7 +114,7 @@ const STYLE = `
   .agent { background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; padding: 6px 22px 18px; margin: 0 0 18px; }
   .agent-name { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--amber); margin: 14px 0 4px; }
+    text-transform: uppercase; color: var(--accent-strong); margin: 14px 0 4px; }
   .agent h1, .agent h2, .agent h3, .agent h4 { font-family: var(--mono);
     color: var(--text); line-height: 1.3; }
   .agent h1 { font-size: 19px; } .agent h2 { font-size: 17px; }
@@ -123,10 +127,10 @@ const STYLE = `
   .agent code { font-family: var(--mono); background: var(--panel-2);
     padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
   .agent hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
-  .agent blockquote { border-left: 3px solid var(--amber-dim); margin: 12px 0;
+  .agent blockquote { border-left: 3px solid var(--accent); margin: 12px 0;
     padding: 2px 14px; color: var(--muted); }
-  .agent a { color: var(--amber); }
-  .news a { color: var(--amber); } .news .src { color: var(--muted); font-size: 13px; }
+  .agent a { color: var(--accent-strong); }
+  .news a { color: var(--accent-strong); } .news .src { color: var(--muted); font-size: 13px; }
   footer { margin-top: 48px; border-top: 1px solid var(--line); padding-top: 18px;
     color: var(--muted); font-size: 13px; }
   footer .tier3 { line-height: 1.7; }
@@ -134,9 +138,9 @@ const STYLE = `
     letter-spacing: 0.04em; }
   @media print {
     body { background: #ffffff; color: #1c1a15; }
-    :root { --bg: #ffffff; --panel: #ffffff; --panel-2: #f2efe8; --line: #c9c2b2;
-      --text: #1c1a15; --muted: #5c564a; --amber: #8a5f14; --amber-dim: #8a5f14; }
-    .agent, .decision { border-color: #c9c2b2; }
+    :root { --bg: #ffffff; --panel: #ffffff; --panel-2: #eef0f4; --line: #c3c9d4;
+      --text: #16191f; --muted: #4d5560; --accent: #3b4fc0; --accent-strong: #3b4fc0; }
+    .agent, .decision { border-color: #c3c9d4; }
   }
 `;
 
