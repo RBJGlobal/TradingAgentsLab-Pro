@@ -41,6 +41,79 @@ interface PhaseGroup {
   messages: Array<{ agent: string; content: string }>;
 }
 
+// ---------------------------------------------------------------------------
+// Chat-artifact stripping
+//
+// The graph's agents are chat models, and their reports sometimes leak
+// conversational framing that reads wrong in an exported document:
+//   - leading preambles: "I now have a comprehensive dataset. Let me compile
+//     the full report." / "All data has been collected. Here is the..."
+//   - trailing offers: "If helpful, I can next turn this into: 1. ... 2. ..."
+// Both were observed verbatim in real TSLA runs (2026-07-06, OpenAI AND
+// Anthropic). Stripping is deliberately conservative: only short paragraphs
+// matching known chat patterns go, and only when substantial content remains,
+// so a real report can never be hollowed out by a false positive.
+// ---------------------------------------------------------------------------
+
+/** A paragraph that is only a markdown horizontal rule. */
+const SEPARATOR_RE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
+
+/** A paragraph that is a list item (the continuation of a trailing offer). */
+const LIST_ITEM_RE = /^\s*(?:\d+[.)]|[-*•])\s/;
+
+/** Chatty lead-ins that precede the actual report. Anchored to paragraph
+ * start; each observed in the wild (see block comment above). */
+const LEADING_PREAMBLE_RE =
+  /^(?:i (?:now )?have\b|i['’]ve (?:now )?(?:gathered|collected|compiled|pulled)\b|all (?:the )?data (?:has|have) been (?:collected|gathered)\b|now i have\b|let me (?:now )?(?:compile|synthesize|put together)\b|here (?:is|are) (?:the|my|a)\b.*:\s*$|(?:great|perfect|excellent)[.,!])/is;
+
+/** Chatty sign-offs offering follow-up work the export can't deliver. */
+const TRAILING_OFFER_RE =
+  /^(?:if (?:helpful|useful|you(?:['’]d| would)? (?:like|want|prefer)|you want|desired)\b|would you like me to\b|let me know if\b|i can (?:also|next|then|further)\b|want me to\b|shall i\b|happy to\b)/i;
+
+const MAX_ARTIFACT_PARA_LEN = 300;
+
+/**
+ * Remove conversational preambles and trailing offers from an agent report.
+ * Exported for the standalone-HTML transcript generator to reuse.
+ */
+export function stripChatArtifacts(content: string): string {
+  const paras = content.split(/\n{2,}/);
+
+  // Leading: drop up to one preamble paragraph, plus a dangling separator
+  // it may have introduced. Require real content after the cut.
+  let start = 0;
+  if (
+    paras.length > 1 &&
+    paras[0].trim().length <= MAX_ARTIFACT_PARA_LEN &&
+    LEADING_PREAMBLE_RE.test(paras[0].trim())
+  ) {
+    start = 1;
+    if (start < paras.length - 1 && SEPARATOR_RE.test(paras[start])) start++;
+  }
+
+  // Trailing: scan backwards past separators and list items (the offer's
+  // enumerated options), then require the anchor paragraph itself to be a
+  // short offer. Anything else aborts the strip entirely.
+  let end = paras.length;
+  let probe = paras.length - 1;
+  while (probe > start && (SEPARATOR_RE.test(paras[probe]) || LIST_ITEM_RE.test(paras[probe]))) {
+    probe--;
+  }
+  if (
+    probe > start &&
+    paras[probe].trim().length <= MAX_ARTIFACT_PARA_LEN &&
+    TRAILING_OFFER_RE.test(paras[probe].trim())
+  ) {
+    end = probe;
+    // Drop a separator left dangling just above the removed offer.
+    while (end - 1 > start && SEPARATOR_RE.test(paras[end - 1])) end--;
+  }
+
+  const kept = paras.slice(start, end).join('\n\n').trim();
+  // Never hollow out a message: if stripping left nothing, keep the original.
+  return kept.length > 0 ? kept : content;
+}
+
 function groupByPhase(events: DebateEvent[]): PhaseGroup[] {
   const groups: PhaseGroup[] = [];
   for (const ev of events) {
@@ -111,7 +184,7 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
     lines.push(`## ${PHASE_LABEL[group.phase] ?? group.phase}`, '');
     for (const msg of group.messages) {
       lines.push(`### ${msg.agent}`, '');
-      lines.push(msg.content, '');
+      lines.push(stripChatArtifacts(msg.content), '');
     }
   }
 
