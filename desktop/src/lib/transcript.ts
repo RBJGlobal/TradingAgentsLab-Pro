@@ -5,19 +5,21 @@ import type {
   NewsHeadlinesEvent,
 } from './engine-client';
 
-const PHASE_LABEL: Record<string, string> = {
+// Shared with the standalone-HTML transcript generator (transcript-html.tsx),
+// which walks the same event stream — hence the exports below.
+export const PHASE_LABEL: Record<string, string> = {
   analysts: 'Analysts',
   researchers: 'Researchers',
   trader: 'Trader',
   risk: 'Risk',
 };
 
-function findStart(events: DebateEvent[]): { ticker: string; trade_date: string } | null {
+export function findStart(events: DebateEvent[]): { ticker: string; trade_date: string } | null {
   const ev = events.find((e) => e.type === 'session.start');
   return ev && ev.type === 'session.start' ? { ticker: ev.ticker, trade_date: ev.trade_date } : null;
 }
 
-function findSummary(events: DebateEvent[]): QuoteSummary | null {
+export function findSummary(events: DebateEvent[]): QuoteSummary | null {
   const ev = events.find((e) => e.type === 'data.summary');
   if (ev && ev.type === 'data.summary') {
     const { type: _t, ...rest } = ev;
@@ -26,17 +28,17 @@ function findSummary(events: DebateEvent[]): QuoteSummary | null {
   return null;
 }
 
-function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
+export function findDecision(events: DebateEvent[]): AnalyzeDecision | null {
   const ev = events.find((e) => e.type === 'session.complete');
   return ev && ev.type === 'session.complete' ? ev.decision : null;
 }
 
-function findNews(events: DebateEvent[]): NewsHeadlinesEvent | null {
+export function findNews(events: DebateEvent[]): NewsHeadlinesEvent | null {
   const ev = events.find((e) => e.type === 'news.headlines');
   return ev && ev.type === 'news.headlines' ? ev : null;
 }
 
-interface PhaseGroup {
+export interface PhaseGroup {
   phase: string;
   messages: Array<{ agent: string; content: string }>;
 }
@@ -114,7 +116,7 @@ export function stripChatArtifacts(content: string): string {
   return kept.length > 0 ? kept : content;
 }
 
-function groupByPhase(events: DebateEvent[]): PhaseGroup[] {
+export function groupByPhase(events: DebateEvent[]): PhaseGroup[] {
   const groups: PhaseGroup[] = [];
   for (const ev of events) {
     if (ev.type !== 'agent.message') continue;
