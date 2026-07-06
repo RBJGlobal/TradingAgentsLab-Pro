@@ -323,7 +323,11 @@ const PHASE_ACTIVITY: Record<string, string> = {
   risk: 'Risk managers are stress-testing the decision',
 };
 
-const TYPICAL_DURATION = 'Typically 4 to 5 minutes';
+// Founder-measured real full-graph runs (2026-07-06, TSLA, all four
+// analysts): ~11m30s on Anthropic API; OAuth/OpenAI in the same band.
+// Varies with provider, model split, debate rounds, and analyst count,
+// so the copy quotes a range rather than a point estimate.
+const TYPICAL_DURATION = 'Typically 8 to 15 minutes';
 
 function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const start = findStart(events);
@@ -387,7 +391,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
       ? (endedAtRef.current ?? now) - startedAtRef.current
       : null;
 
-  // Live-status inputs. A full run is 4-5 min with 20-60s of silent LLM work
+  // Live-status inputs. A full run is 8-15 min with 20-60s of silent LLM work
   // between agent turns, so we drive continuous motion (spinner + shimmer bar +
   // ticking clock) and a present-tense narration of the active phase so the run
   // never reads as stuck. Only while genuinely streaming toward a decision.
