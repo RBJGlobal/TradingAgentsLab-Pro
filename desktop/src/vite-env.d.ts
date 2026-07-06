@@ -150,6 +150,11 @@ interface TradingAgentsLabBridge {
   avSignup: {
     getFreeKey: () => Promise<string | null>;
   };
+  transcript: {
+    /** Writes a standalone HTML transcript to userData/transcripts and
+     * opens it in the default browser; resolves with the file path. */
+    openHtml: (html: string, baseName: string) => Promise<string>;
+  };
   oauth: OAuthBridge;
   onMenuCommand: (
     channel: MenuChannel,

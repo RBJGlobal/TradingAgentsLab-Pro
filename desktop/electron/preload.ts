@@ -169,6 +169,13 @@ contextBridge.exposeInMainWorld('tradingAgentsLab', {
     getFreeKey: (): Promise<string | null> =>
       ipcRenderer.invoke('av-signup:start'),
   },
+  transcript: {
+    // Persists a renderer-built standalone HTML transcript under
+    // userData/transcripts and opens it in the default browser.
+    // Resolves with the written file path.
+    openHtml: (html: string, baseName: string): Promise<string> =>
+      ipcRenderer.invoke('transcript:open-html', html, baseName),
+  },
   oauth: {
     openaiStart: (): Promise<OAuthStartResult> =>
       ipcRenderer.invoke('oauth:openai:start'),

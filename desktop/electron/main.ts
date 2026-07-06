@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   onEngineExit,
@@ -167,6 +168,43 @@ ipcMain.handle('secrets:delete', (_evt, key: string) => deleteSecret(key));
 // In-app Alpha Vantage free-key signup. Resolves with the captured key (or
 // null if the user closed the window without finishing). See av-signup.ts.
 ipcMain.handle('av-signup:start', () => openAlphaVantageSignup(win));
+
+// ---- Transcript HTML export ----------------------------------------------
+//
+// The renderer builds the complete standalone document (src/lib/
+// transcript-html.tsx — inline CSS, no scripts, model output escaped by
+// react-markdown); main only persists it under userData/transcripts and
+// opens it in the default browser. Files are kept, not temp: users can
+// bookmark, print, or share a past analysis without re-running it.
+ipcMain.handle(
+  'transcript:open-html',
+  async (_evt, html: string, baseName: string): Promise<string> => {
+    if (typeof html !== 'string' || html.trim().length === 0) {
+      throw new Error('transcript document is empty');
+    }
+    // A full 4-analyst transcript renders to ~300-500 KB; 8 MB is a
+    // generous ceiling that still stops a runaway renderer payload.
+    if (html.length > 8 * 1024 * 1024) {
+      throw new Error('transcript document too large');
+    }
+    const safe =
+      String(baseName || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 64) || 'transcript';
+    const dir = path.join(app.getPath('userData'), 'transcripts');
+    await fs.promises.mkdir(dir, { recursive: true });
+    // Second-precision stamp keeps repeated exports of the same session
+    // distinct while sorting chronologically in the folder.
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const file = path.join(dir, `${safe}-${stamp}.html`);
+    await fs.promises.writeFile(file, html, 'utf8');
+    const openError = await shell.openPath(file);
+    if (openError) throw new Error(openError);
+    return file;
+  },
+);
 
 // ---- OAuth (OpenAI Codex / ChatGPT subscription) -------------------------
 //
