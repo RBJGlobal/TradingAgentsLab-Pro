@@ -1,15 +1,13 @@
 /**
  * Build-time feature flags for Pro.
  *
- * OAUTH_ENABLED — OpenAI OAuth (ChatGPT-plan sign-in) is hidden in Pro v1.
- * The Codex /responses adapter behind it is text-only (no tool-calling), and
- * the real LangGraph debate is tool-heavy, so an OAuth-driven run silently
- * degrades below the quality the user paid for. While this is false:
- *   - Settings hides the OAuth row (Settings.tsx),
- *   - getOpenAIOAuthStatus() reports disconnected everywhere, so stale
- *     vault tokens from earlier builds can never win the provider
- *     resolution over an API key (Analyze.tsx / BatchRunner.tsx).
- * Flip to true in v1.1 once the Codex adapter supports tool-calling and is
- * wrapped as a LangChain BaseChatModel (see Pro backlog).
+ * OAUTH_ENABLED — OpenAI OAuth (ChatGPT-plan sign-in) drives the REAL
+ * LangGraph graph on this branch: the engine routes provider="openai"
+ * LLM construction through the Codex subscription backend, which speaks
+ * the same Responses API wire shape the library already uses — including
+ * tool-calling (verified by live spike, 2026-07-05; see
+ * engine/codex_llm.py). While this is false the OAuth row is hidden and
+ * getOpenAIOAuthStatus() reports disconnected everywhere, so vault
+ * tokens can never win provider resolution over an API key.
  */
-export const OAUTH_ENABLED = false;
+export const OAUTH_ENABLED = true;
