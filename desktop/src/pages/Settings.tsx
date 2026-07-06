@@ -79,6 +79,9 @@ import {
   saveLicenseKey,
   type LicenseStatus,
 } from '../lib/license';
+// OpenAI OAuth is hidden in Pro v1 — see lib/feature-flags.ts for the why
+// and everything the flag gates (this row + provider resolution).
+import { OAUTH_ENABLED } from '../lib/feature-flags';
 
 type Tab =
   | 'llm'
@@ -96,13 +99,6 @@ interface TabDef {
   label: string;
   description: string;
 }
-
-// OpenAI OAuth (ChatGPT-subscription) is hidden in Pro v1: it cannot drive the
-// real LangGraph graph yet. The graph is tool-heavy, but the Codex /responses
-// adapter is text-only (no tool-calling), so OAuth would silently fail against
-// the real engine. Flip this to true in v1.1 once the Codex tool-calling +
-// LangChain BaseChatModel wrapper lands (backlog: "OAuth drives the real graph").
-const OAUTH_ENABLED = false;
 
 const TABS: TabDef[] = [
   {

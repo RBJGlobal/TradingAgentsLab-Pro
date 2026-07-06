@@ -7,6 +7,8 @@
  * React state.
  */
 
+import { OAUTH_ENABLED } from './feature-flags';
+
 export interface OAuthStartResult {
   success: boolean;
   email?: string;
@@ -50,6 +52,10 @@ export function startOpenAIOAuthLogin(): Promise<OAuthStartResult> {
 }
 
 export function getOpenAIOAuthStatus(): Promise<OAuthStatus> {
+  // With OAuth hidden in Pro v1, report disconnected unconditionally so
+  // stale vault tokens from earlier builds never outrank an API key in
+  // provider resolution (Analyze / BatchRunner treat OAuth as absent).
+  if (!OAUTH_ENABLED) return Promise.resolve({ connected: false });
   return bridge().openaiStatus();
 }
 
