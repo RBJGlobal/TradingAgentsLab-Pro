@@ -30,13 +30,16 @@ Design notes (the non-obvious parts, proven by probes in the P1 review gate):
 
 * The real Portfolio Manager emits a 5-tier rating (Buy / Overweight / Hold /
   Underweight / Sell) with no confidence field, rendered as markdown. The free
-  app's ACTION=/CONFIDENCE= regex parser does not match that shape, so we parse
-  the PM markdown here and map it onto the existing 3-tier decision contract
-  while also surfacing the richer native fields.
+  app's STANCE=/CONVICTION= regex parser does not match that shape, so we parse
+  the PM markdown here and map the rating 1:1 onto the analytical stance
+  vocabulary (engine/stance.py) while also surfacing the richer native fields.
+  A post-run quick-model call scores the bull/bear thesis strengths + risk
+  level; the app's own surfaces never carry the raw trade-directive rating.
 """
 
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import re
@@ -110,17 +113,20 @@ _AGENT_OF: Dict[str, str] = {
     **_RISK_NODES,
 }
 
-# Rating -> 3-tier action, and a documented confidence heuristic so the existing
-# decision card (which expects {action, confidence}) keeps working. The native
-# 5-tier rating is passed through alongside for the Pro-richer display.
-_RATING_TO_ACTION = {
-    "buy": "BUY",
-    "overweight": "BUY",
-    "hold": "HOLD",
-    "underweight": "SELL",
-    "sell": "SELL",
+# The upstream Portfolio Manager emits a native 5-tier rating
+# (Buy/Overweight/Hold/Underweight/Sell). The app deliberately does not
+# surface trade directives, so the rating maps 1:1 onto the analytical
+# stance vocabulary (engine/stance.py) at this presentation layer. The
+# pristine upstream library is untouched; only what we SAY about its
+# output changes. Conviction keeps the documented heuristic.
+_RATING_TO_STANCE = {
+    "buy": "bullish",
+    "overweight": "moderately_bullish",
+    "hold": "neutral",
+    "underweight": "moderately_bearish",
+    "sell": "bearish",
 }
-_RATING_TO_CONFIDENCE = {
+_RATING_TO_CONVICTION = {
     "buy": 0.85,
     "overweight": 0.65,
     "hold": 0.5,
@@ -235,11 +241,13 @@ def _round_from_delta(delta: Dict[str, Any], phase: str) -> Optional[int]:
 
 
 def _parse_pm_decision(final_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Parse the Portfolio Manager markdown into the wire decision contract.
+    """Parse the Portfolio Manager markdown into the wire assessment contract.
 
-    Maps the native 5-tier rating onto the existing 3-tier ``action`` and a
-    heuristic ``confidence`` (so the current decision card keeps working), while
-    passing through the richer native fields for the Pro display.
+    Maps the native 5-tier rating onto the analytical stance vocabulary and a
+    heuristic ``conviction``. The upstream rating word itself (a trade
+    directive) is deliberately NOT passed through: the app's own surfaces
+    never issue buy/sell/hold. The PM's raw markdown still appears verbatim
+    in the transcript as the agent's own speech.
     """
     text = ""
     if final_state:
@@ -249,8 +257,8 @@ def _parse_pm_decision(final_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     rating = rating_match.group(1).strip() if rating_match else ""
     rating_key = rating.lower()
 
-    action = _RATING_TO_ACTION.get(rating_key, "HOLD")
-    confidence = _RATING_TO_CONFIDENCE.get(rating_key, 0.5)
+    stance = _RATING_TO_STANCE.get(rating_key, "neutral")
+    conviction = _RATING_TO_CONVICTION.get(rating_key, 0.5)
 
     summary_match = re.search(
         r"\*\*Executive Summary\*\*:\s*(.+?)(?:\n\*\*|\Z)", text, re.DOTALL
@@ -260,21 +268,86 @@ def _parse_pm_decision(final_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     )
     reasoning = (summary_match.group(1).strip() if summary_match else "").strip()
     if not reasoning:
-        reasoning = text.strip() or "No decision text produced."
+        reasoning = text.strip() or "No assessment text produced."
 
     price_match = re.search(r"\*\*Price Target\*\*:\s*([\d.]+)", text)
     horizon_match = re.search(r"\*\*Time Horizon\*\*:\s*(.+?)(?:\n|\Z)", text)
 
     return {
-        "action": action,
-        "confidence": confidence,
+        "stance": stance,
+        "conviction": conviction,
         "reasoning": reasoning,
-        # Pro-richer native fields (ignored by the current UI, surfaced in P2).
-        "rating": rating or None,
+        # Pro-richer native fields. price_target is displayed as the
+        # "modeled scenario range" in the UI (an analytical estimate, not
+        # a directive); the field name stays for wire stability.
         "investment_thesis": (thesis_match.group(1).strip() if thesis_match else None),
         "price_target": (float(price_match.group(1)) if price_match else None),
         "time_horizon": (horizon_match.group(1).strip() if horizon_match else None),
     }
+
+
+_STRENGTH_PROMPT = """You are scoring a finished research debate for an educational analysis tool.
+
+Bull researcher's case:
+{bull}
+
+Bear researcher's case:
+{bear}
+
+Risk committee discussion:
+{risk}
+
+Score how strongly each side argued (evidence quality, specificity, internal
+consistency), independently of which side you agree with, and rate the overall
+risk profile the committee surfaced. Output exactly three lines:
+BULL_STRENGTH=<integer 0-100>
+BEAR_STRENGTH=<integer 0-100>
+RISK=LOW | RISK=MODERATE | RISK=ELEVATED
+"""
+
+
+def _clip(text: str, n: int = 4000) -> str:
+    return text if len(text) <= n else text[:n] + " …[truncated]"
+
+
+def _score_thesis_strengths(graph: Any, final_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """One quick-model call scoring the bull/bear cases and risk level.
+
+    Uses ``graph.quick_thinking_llm`` (already constructed with the run's
+    BYO key AND the CostGuard token meter callbacks, so the extra call is
+    metered like every other). Runs synchronously — call via
+    ``asyncio.to_thread``. Any failure degrades to null strengths, which
+    the UI renders by hiding the strength bars; never fails the run.
+    """
+    empty = {"bull_strength": None, "bear_strength": None, "risk_level": None}
+    if not final_state:
+        return empty
+    inv = final_state.get("investment_debate_state") or {}
+    risk = final_state.get("risk_debate_state") or {}
+    bull = str(inv.get("bull_history") or "").strip()
+    bear = str(inv.get("bear_history") or "").strip()
+    risk_text = str(risk.get("history") or "").strip()
+    if not bull or not bear:
+        return empty
+    try:
+        prompt = _STRENGTH_PROMPT.format(
+            bull=_clip(bull), bear=_clip(bear), risk=_clip(risk_text) or "(none)"
+        )
+        response = graph.quick_thinking_llm.invoke(prompt)
+        content = str(getattr(response, "content", response))
+        out: Dict[str, Any] = dict(empty)
+        for key, field in (("BULL_STRENGTH", "bull_strength"), ("BEAR_STRENGTH", "bear_strength")):
+            m = re.search(rf"{key}\s*=\s*([0-9]+)", content, re.IGNORECASE)
+            if m:
+                v = int(m.group(1))
+                if 0 <= v <= 100:
+                    out[field] = v
+        m = re.search(r"RISK\s*=\s*(LOW|MODERATE|ELEVATED)", content, re.IGNORECASE)
+        if m:
+            out["risk_level"] = m.group(1).lower()
+        return out
+    except Exception:
+        return empty
 
 
 def _build_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -549,6 +622,22 @@ async def full_debate(
             return
 
         decision = _parse_pm_decision(final_state)
+
+        # Score the bull/bear thesis strengths + risk level with one extra
+        # quick-model call (metered by the same token meter; degrades to
+        # null strengths on any failure). asyncio.to_thread keeps the sync
+        # invoke off the event loop, same as the graph stream itself.
+        try:
+            strengths = await asyncio.to_thread(
+                _score_thesis_strengths, graph, final_state
+            )
+        except Exception:
+            strengths = {
+                "bull_strength": None,
+                "bear_strength": None,
+                "risk_level": None,
+            }
+        decision.update(strengths)
 
         # Persist to the memory log so the NEXT same-ticker run can reflect on
         # this decision. Bypassing the library's _run_graph means we replicate

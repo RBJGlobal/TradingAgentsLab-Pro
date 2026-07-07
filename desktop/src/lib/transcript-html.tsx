@@ -24,6 +24,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DebateEvent } from './engine-client';
+import { riskLabel, stanceLabel, stanceLean } from './stance';
 import {
   PHASE_LABEL,
   findDecision,
@@ -106,8 +107,9 @@ const STYLE = `
   .action.hold { color: var(--hold); }
   .decision .facts { color: var(--muted); font-family: var(--mono);
     font-size: 13.5px; margin: 6px 0 12px; }
+  .ownership { color: var(--muted); font-size: 12.5px; margin-top: 16px; }
   .tier2 { color: var(--muted); font-size: 12.5px; border-top: 1px dashed var(--line);
-    margin-top: 16px; padding-top: 10px; }
+    margin-top: 10px; padding-top: 10px; }
   ul.data { list-style: none; padding: 0; margin: 0; }
   ul.data li { padding: 3px 0; }
   ul.data .k { color: var(--muted); display: inline-block; min-width: 170px; }
@@ -182,21 +184,34 @@ export function buildTranscriptHtml(events: DebateEvent[]): TranscriptHtmlResult
   parts.push('</header>');
 
   if (decision) {
-    const cls =
-      decision.action === 'BUY' ? 'buy' : decision.action === 'SELL' ? 'sell' : 'hold';
-    const facts: string[] = [`confidence ${(decision.confidence * 100).toFixed(0)}%`];
-    if (decision.rating) facts.push(`rating ${decision.rating}`);
-    if (decision.price_target != null) facts.push(`price target ${decision.price_target}`);
+    const lean = stanceLean(decision.stance);
+    const cls = lean === 'bullish' ? 'buy' : lean === 'bearish' ? 'sell' : 'hold';
+    const facts: string[] = [`conviction ${(decision.conviction * 100).toFixed(0)}%`];
+    if (decision.bull_strength != null && decision.bear_strength != null) {
+      facts.push(
+        `bull thesis ${decision.bull_strength}/100`,
+        `bear thesis ${decision.bear_strength}/100`,
+      );
+    }
+    if (decision.risk_level != null) {
+      facts.push(`risk ${riskLabel(decision.risk_level).toLowerCase()}`);
+    }
+    if (decision.price_target != null) facts.push(`modeled scenario ${decision.price_target}`);
     if (decision.time_horizon) facts.push(`horizon ${decision.time_horizon}`);
-    parts.push('<h2 class="section">Decision</h2>');
+    parts.push('<h2 class="section">Committee Assessment</h2>');
     parts.push('<div class="decision">');
-    parts.push(`<div class="action ${cls}">${esc(decision.action)}</div>`);
+    parts.push(`<div class="action ${cls}">${esc(stanceLabel(decision.stance))}</div>`);
     parts.push(`<div class="facts">${esc(facts.join(' · '))}</div>`);
     parts.push(markdownToHtml(decision.reasoning));
     if (decision.investment_thesis) {
       parts.push('<h4>Investment thesis</h4>');
       parts.push(markdownToHtml(decision.investment_thesis));
     }
+    parts.push(
+      `<div class="ownership">${esc(
+        'This assessment is an analytical output of a simulated research committee, not a recommendation. Any investment decision is yours alone.',
+      )}</div>`,
+    );
     parts.push(`<div class="tier2">${esc(TIER2)}</div>`);
     parts.push('</div>');
   }
