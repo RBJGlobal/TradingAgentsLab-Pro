@@ -67,7 +67,25 @@ def _remove_pidfile(path: str) -> None:
         pass
 
 
+def _selftest_full_debate() -> None:
+    """Import the full-debate stack and exit — a packaging probe.
+
+    The server lazy-imports full_debate only when a Pro run starts, so a
+    frozen build (PyInstaller) can boot and pass /health while missing the
+    LangChain/LangGraph/tradingagents stack entirely. Release verification
+    runs the frozen binary with TAL_SELFTEST=full_debate: exit 0 proves the
+    whole import graph is bundled; a traceback names exactly what is not.
+    """
+    from . import full_debate  # noqa: F401 — the import IS the test
+
+    sys.stdout.write("selftest ok: full_debate import graph loads\n")
+
+
 def main() -> None:
+    if os.environ.get("TAL_SELFTEST") == "full_debate":
+        _selftest_full_debate()
+        return
+
     token = os.environ.get("TAL_ENGINE_TOKEN") or secrets.token_urlsafe(24)
     port = _pick_port()
 

@@ -1,3 +1,4 @@
+import proIcon from './assets/pro-icon.png';
 import { useCallback, useEffect, useState } from 'react';
 import Analyze from './pages/Analyze';
 import Settings from './pages/Settings';
@@ -129,7 +130,7 @@ function App() {
       <header className={`${styles.titleBar} app-drag-region`}>
         <div className={styles.titleBarContent}>
           <span className={styles.brand}>
-            <span className={styles.brandMark}>◆</span>
+            <img className={styles.brandLogo} src={proIcon} alt="" />
             <span className={styles.brandText}>Trading Agents Lab</span>
             <span className={styles.brandPro}>Pro</span>
           </span>

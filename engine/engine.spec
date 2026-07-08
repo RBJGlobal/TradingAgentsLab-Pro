@@ -19,8 +19,20 @@ binaries = []
 hiddenimports = []
 
 # Packages with dynamic imports / data files that static analysis misses.
-for pkg in ("uvicorn", "fastapi", "starlette", "yfinance", "openai", "anthropic"):
-    d, b, h = collect_all(pkg)
+# Pro additions vs the free app: the bundled upstream research library and
+# the LangChain/LangGraph stack it runs on (prompts + data files ride via
+# collect_all), plus tiktoken's tokenizer data. Wrapped per-package so an
+# optional extra that is absent from the venv skips instead of failing.
+for pkg in (
+    "uvicorn", "fastapi", "starlette", "yfinance", "openai", "anthropic",
+    "tradingagents", "langgraph", "langchain", "langchain_core",
+    "langchain_openai", "langchain_anthropic", "langchain_google_genai",
+    "tiktoken", "tiktoken_ext",
+):
+    try:
+        d, b, h = collect_all(pkg)
+    except Exception:
+        continue
     datas += d
     binaries += b
     hiddenimports += h

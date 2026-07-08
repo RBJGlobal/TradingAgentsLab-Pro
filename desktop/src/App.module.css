@@ -46,6 +46,16 @@
   text-shadow: 0 0 12px var(--tal-accent-muted);
 }
 
+/* The Pro app icon as the title-bar mark (replaces the ◆ glyph). The
+   source PNG is the full Dock tile, so round it down to read as a badge. */
+.brandLogo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
 .brandText {
   color: var(--tal-text-primary);
   font-size: var(--tal-text-sm);

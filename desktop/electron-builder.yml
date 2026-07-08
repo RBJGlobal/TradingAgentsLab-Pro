@@ -2,8 +2,8 @@
 # Full plan: docs/distribution-plan.md. Build locally (unsigned, host arch):
 #   npm run dist:dir      # fast --dir build for smoke-testing the package
 #   npm run dist:mac      # full dmg + zip (needs signing creds to be shippable)
-appId: ai.tradingagentslab.desktop
-productName: Trading Agents Lab
+appId: ai.tradingagentslab.desktop.pro
+productName: Trading Agents Lab Pro
 copyright: Copyright 2026 RBJ Global
 
 directories:
@@ -61,4 +61,4 @@ dmg:
 publish:
   provider: github
   owner: RBJGlobal
-  repo: TradingAgentsLab
+  repo: TradingAgentsLab-Pro
