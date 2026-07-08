@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './Settings.module.css';
 import UpdatesSection from '../components/UpdatesSection';
+import { STANCES, stanceLabel } from '../lib/stance';
 import {
   deleteSecret,
   getAvailability,
@@ -72,13 +73,6 @@ import {
   type EffortLevel,
   type ProConfigState,
 } from '../lib/pro-config';
-import {
-  clearLicenseKey,
-  getLicenseKey,
-  getLicenseStatus,
-  saveLicenseKey,
-  type LicenseStatus,
-} from '../lib/license';
 // OpenAI OAuth is hidden in Pro v1 — see lib/feature-flags.ts for the why
 // and everything the flag gates (this row + provider resolution).
 import { OAUTH_ENABLED } from '../lib/feature-flags';
@@ -90,7 +84,6 @@ type Tab =
   | 'webhooks'
   | 'channels'
   | 'costguard'
-  | 'license'
   | 'updates'
   | 'about';
 
@@ -136,12 +129,6 @@ const TABS: TabDef[] = [
     label: 'Cost Guard',
     description:
       'Daily / weekly / monthly USD caps + optional sessions-per-day rate cap. Applies to live LLM debates only; stub mode is always free.',
-  },
-  {
-    id: 'license',
-    label: 'License',
-    description:
-      'Your trial status and license key. One-time license, no subscription. Runs are fully unlocked during the free trial.',
   },
   {
     id: 'updates',
@@ -417,7 +404,6 @@ function Settings() {
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
           {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
-          {active === 'license' && <LicenseTab />}
           {active === 'updates' && (
             <div className={styles.formCard}>
               <UpdatesSection />
@@ -1148,7 +1134,7 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
         </div>
         <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>License</dt>
-          <dd className={styles.aboutValue}>Proprietary (Trading Agents Lab Pro)</dd>
+          <dd className={styles.aboutValue}>AGPL-3.0, open source (upstream core Apache-2.0)</dd>
         </div>
         <div className={styles.aboutRow}>
           <dt className={styles.aboutKey}>Posture</dt>
@@ -1389,14 +1375,15 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
         <div className={styles.phaseGuard}>
           <strong>No webhooks configured.</strong> Push every completed debate
           to Telegram, Slack, Discord, or your own HTTPS endpoint. Filter by
-          action (BUY / SELL / HOLD) or confidence so you only get pinged on
-          what matters.
+          stance (bullish through bearish) or conviction so you only get
+          pinged on what matters.
           <br />
           <br />
-          Webhooks are an analysis handoff. They push the decision JSON to
-          your receivers. They never execute trades. If you want to bridge to
-          a broker, your receiver (Cloudflare Worker, Lambda, etc.) calls the
-          broker API.
+          Webhooks are an analysis handoff. They push the committee
+          assessment JSON to your receivers. They never execute trades and
+          carry no trade instruction. If you want to bridge to a broker, your
+          receiver (Cloudflare Worker, Lambda, etc.) owns that decision and
+          calls the broker API itself.
         </div>
       )}
 
@@ -1412,14 +1399,14 @@ function WebhooksTab({ availability }: WebhooksTabProps) {
                 <div className={styles.rowName}>
                   {w.name}{' '}
                   <span className={styles.pill}>{KIND_LABEL[w.kind]}</span>
-                  {w.filter.actions.length > 0 && (
+                  {w.filter.stances.length > 0 && (
                     <span className={styles.pill}>
-                      {w.filter.actions.join(' / ')}
+                      {w.filter.stances.map((s) => stanceLabel(s)).join(' / ')}
                     </span>
                   )}
-                  {w.filter.min_confidence > 0 && (
+                  {w.filter.min_conviction > 0 && (
                     <span className={styles.pill}>
-                      ≥ {Math.round(w.filter.min_confidence * 100)}%
+                      ≥ {Math.round(w.filter.min_conviction * 100)}%
                     </span>
                   )}
                 </div>
@@ -1545,7 +1532,7 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
           className={styles.input}
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          placeholder="Telegram me on BUY"
+          placeholder="Telegram me on bullish reads"
           data-testid="webhook-name-input"
         />
       </div>
@@ -1644,12 +1631,12 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
       )}
 
       <div className={styles.field}>
-        <label className={styles.label}>Fire on actions</label>
+        <label className={styles.label}>Fire on stances</label>
         <div className={styles.webhooksCheckboxes}>
-          {(['BUY', 'SELL', 'HOLD'] as const).map((a) => {
-            const checked = draft.filter.actions.includes(a);
+          {STANCES.map((s) => {
+            const checked = draft.filter.stances.includes(s);
             return (
-              <label key={a} className={styles.webhooksCheckboxLabel}>
+              <label key={s} className={styles.webhooksCheckboxLabel}>
                 <input
                   type="checkbox"
                   checked={checked}
@@ -1658,37 +1645,37 @@ function WebhookEditor({ config, onCancel, onSave }: WebhookEditorProps) {
                       ...draft,
                       filter: {
                         ...draft.filter,
-                        actions: e.target.checked
-                          ? [...draft.filter.actions, a]
-                          : draft.filter.actions.filter((x) => x !== a),
+                        stances: e.target.checked
+                          ? [...draft.filter.stances, s]
+                          : draft.filter.stances.filter((x) => x !== s),
                       },
                     })
                   }
                 />
-                {a}
+                {stanceLabel(s)}
               </label>
             );
           })}
         </div>
         <p className={styles.hint}>
-          Leave all unchecked to fire on every action.
+          Leave all unchecked to fire on every stance.
         </p>
       </div>
 
       <div className={styles.field}>
         <label className={styles.label}>
-          Minimum confidence: {Math.round(draft.filter.min_confidence * 100)}%
+          Minimum conviction: {Math.round(draft.filter.min_conviction * 100)}%
         </label>
         <input
           type="range"
           min={0}
           max={100}
           step={5}
-          value={Math.round(draft.filter.min_confidence * 100)}
+          value={Math.round(draft.filter.min_conviction * 100)}
           onChange={(e) =>
             setDraft({
               ...draft,
-              filter: { ...draft.filter, min_confidence: Number(e.target.value) / 100 },
+              filter: { ...draft.filter, min_conviction: Number(e.target.value) / 100 },
             })
           }
         />
@@ -1787,78 +1774,6 @@ function AlphaVantageSignupCallout({
       >
         {status === 'opening' ? 'Opening…' : 'Get a free key'}
       </button>
-    </div>
-  );
-}
-
-function LicenseTab() {
-  // Trial status + license-key entry. Validation is a seam stub today (see
-  // lib/license): a key can be stored but will not validate until the Keygen /
-  // Ed25519 playbook is wired, so we message that honestly rather than pretend
-  // to activate. The trial stays fully unlocked in the meantime.
-  const [status, setStatus] = useState<LicenseStatus>(() => getLicenseStatus());
-  const [keyDraft, setKeyDraft] = useState<string>(() => getLicenseKey() ?? '');
-  const [message, setMessage] = useState<string | null>(null);
-
-  const onSave = () => {
-    const trimmed = keyDraft.trim();
-    if (!trimmed) {
-      clearLicenseKey();
-      setStatus(getLicenseStatus());
-      setMessage('License key cleared.');
-      return;
-    }
-    saveLicenseKey(trimmed);
-    const next = getLicenseStatus();
-    setStatus(next);
-    setMessage(
-      next.state === 'licensed'
-        ? 'License activated. Thank you.'
-        : 'Key saved. Online activation is coming soon; your trial remains active until then.',
-    );
-  };
-
-  const statusLine =
-    status.state === 'licensed'
-      ? 'Licensed. Full access to the multi-agent diligence.'
-      : status.state === 'trial'
-        ? `Free trial: ${status.trialDaysLeft} day${status.trialDaysLeft === 1 ? '' : 's'} left. Runs are fully unlocked during the trial.`
-        : 'Your free trial has ended. Enter a license key below to continue running the diligence.';
-
-  return (
-    <div className={styles.formCard}>
-      <fieldset className={styles.formGroup}>
-        <legend className={styles.formLegend}>Status</legend>
-        <p className={styles.formHint}>{statusLine}</p>
-      </fieldset>
-
-      <fieldset className={styles.formGroup}>
-        <legend className={styles.formLegend}>License key</legend>
-        <label className={styles.wideFieldLabel}>
-          Key
-          <input
-            type="text"
-            className={styles.wideField}
-            placeholder="Paste your license key"
-            value={keyDraft}
-            onChange={(e) => setKeyDraft(e.target.value)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-          />
-        </label>
-        <p className={styles.formHint}>
-          Purchase and activation are handled on the Trading Agents Lab Pro
-          website. One-time license, no subscription.
-        </p>
-        {message && <p className={styles.formSuccess}>{message}</p>}
-      </fieldset>
-
-      <div className={styles.formActions}>
-        <button type="button" className={styles.formSave} onClick={onSave}>
-          Save
-        </button>
-      </div>
     </div>
   );
 }
@@ -2670,7 +2585,7 @@ function TelegramBotPanel() {
       <br />
       <em>
         Educational and research purposes only. The bot returns the same
-        decision text the desktop app shows, with the same disclaimers.
+        committee assessment the desktop app shows, with the same disclaimers.
       </em>
 
       {pending.length > 0 && (

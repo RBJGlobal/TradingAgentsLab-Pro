@@ -53,7 +53,7 @@ describe('stripChatArtifacts', () => {
       'If helpful, I can next turn this into:',
       '',
       '1. a bullish vs bearish TSLA trading checklist for this week, or',
-      '2. a concise BUY/HOLD/SELL recommendation based only on this sentiment/news read.',
+      '2. a concise bull-vs-bear read based only on this sentiment/news evidence.',
     ].join('\n');
     expect(stripChatArtifacts(raw)).toBe(REPORT_BODY);
   });

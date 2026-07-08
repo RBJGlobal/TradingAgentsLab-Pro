@@ -302,12 +302,6 @@ export interface AnalyzeRequest {
   engine?: 'full' | 'pro';
   /** Pro-only knobs; ignored unless `engine` selects the Pro path. */
   pro_config?: ProConfig;
-  /** License-gate seam: the stored license key, forwarded so the engine's
-   * pre-flight can verify it (defense in depth). Today the engine pre-flight
-   * is a permissive stub, so this is inert; wiring it now means the founder's
-   * Keygen/Ed25519 validation is a true engine-side drop-in with the token
-   * already on the wire. Undefined during the trial (no key yet). */
-  license?: string;
   /** Optional Alpha Vantage data key. Forwarded so the Pro engine can unlock
    * the news / social / fundamentals analysts, which read it at tool-call time.
    * Absent means market-only (free, yfinance). The engine persists no secrets;
@@ -325,15 +319,35 @@ export interface AnalyzeRequest {
   telegram_chat_ids?: Record<string, string>;
 }
 
+/** The five analytical stances, most to least constructive. The app
+ * deliberately does not emit trade directives (no buy/sell/hold): the
+ * committee assessment describes how the evidence balances, and any
+ * investment decision belongs to the user. The Pro full-graph adapter
+ * maps the upstream PM's native 5-tier rating 1:1 onto this scale. */
+export type Stance =
+  | 'bullish'
+  | 'moderately_bullish'
+  | 'neutral'
+  | 'moderately_bearish'
+  | 'bearish';
+
+export type RiskLevel = 'low' | 'moderate' | 'elevated';
+
 export interface AnalyzeDecision {
-  action: 'BUY' | 'SELL' | 'HOLD' | string;
-  confidence: number;
+  stance: Stance | string;
+  /** Committee conviction in its own stance, 0..1. */
+  conviction: number;
+  /** How strongly the bull case argued, 0-100 (Pro: scored by a post-run
+   * quick-model call; null when scoring was unavailable). */
+  bull_strength?: number | null;
+  /** How strongly the bear case argued, 0-100. */
+  bear_strength?: number | null;
+  risk_level?: RiskLevel | string | null;
   reasoning: string;
   /** Pro-only richer fields from the real Portfolio Manager. The free
-   * engine leaves these undefined; the Pro full-graph adapter fills them
-   * from the PM's 5-tier rating output. Optional so the free path's
-   * `{action, confidence, reasoning}` shape stays valid. */
-  rating?: string | null;
+   * engine leaves these undefined. price_target is DISPLAYED as the
+   * "modeled scenario range" (an analytical estimate, not a directive);
+   * the field name stays for wire stability. */
   investment_thesis?: string | null;
   price_target?: number | null;
   time_horizon?: string | null;
@@ -556,7 +570,11 @@ export interface SessionSummary {
   id: string;
   ticker: string;
   trade_date: string;
+  /** Column names predate the stance model (no SQLite migration): this
+   * now holds the stance string; legacy rows hold BUY/SELL/HOLD and are
+   * display-mapped via lib/stance.ts. */
   decision_action: string;
+  /** Conviction 0..1 (legacy rows: confidence). */
   decision_confidence: number;
   decision_reasoning: string;
   live: boolean;
@@ -1024,9 +1042,6 @@ export async function streamDebate(
         // inert until the Pro Settings surface populates them.
         engine: req.engine,
         pro_config: req.pro_config,
-        // License token for the engine-side pre-flight (inert while the
-        // engine check is a stub; dropped by JSON.stringify when undefined).
-        license: req.license,
         // Optional Alpha Vantage data key (unlocks non-market analysts).
         alpha_vantage_key: req.alpha_vantage_key,
       }),

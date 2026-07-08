@@ -7,6 +7,7 @@ import type {
   NewsHeadlinesEvent,
 } from '../lib/engine-client';
 import Markdown from './Markdown';
+import { normalizeStance, riskLabel, stanceLabel, stanceLean } from '../lib/stance';
 import styles from './DebateStream.module.css';
 
 interface DebateStreamProps {
@@ -588,36 +589,66 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
 
       {decision && (
         <div
-          className={`${styles.decision} ${styles[`decision_${decision.action}`] ?? ''}`}
+          className={`${styles.decision} ${styles[`decision_${stanceLean(decision.stance)}`] ?? ''}`}
           data-testid="decision-card"
-          data-action={decision.action}
+          data-stance={normalizeStance(decision.stance)}
         >
           <div className={styles.decisionLabel}>
-            Decision
-            {decision.rating && (
-              <span className={styles.decisionRating}>{decision.rating}</span>
-            )}
+            Committee Assessment
             {meta.live && (
               <span className={styles.decisionLiveBadge}>
                 Live · {meta.provider ?? 'openai'} · {meta.model ?? '?'}
               </span>
             )}
           </div>
-          <div className={styles.decisionAction} data-testid="decision-action">
-            {decision.action}
+          <div className={styles.decisionAction} data-testid="decision-stance">
+            {stanceLabel(decision.stance)}
           </div>
           <div className={styles.decisionConfidence}>
-            Confidence{' '}
+            Conviction{' '}
             <span className={styles.decisionConfidenceValue}>
-              {(decision.confidence * 100).toFixed(0)}%
+              {(decision.conviction * 100).toFixed(0)}%
             </span>
           </div>
+          {decision.bull_strength != null && decision.bear_strength != null && (
+            <div className={styles.decisionStrengths}>
+              <div className={styles.strengthRow}>
+                <span className={styles.strengthName}>Bull thesis</span>
+                <div className={styles.strengthTrack}>
+                  <div
+                    className={styles.strengthFillBull}
+                    style={{ width: `${decision.bull_strength}%` }}
+                  />
+                </div>
+                <span className={styles.strengthValue}>
+                  {decision.bull_strength}/100
+                </span>
+              </div>
+              <div className={styles.strengthRow}>
+                <span className={styles.strengthName}>Bear thesis</span>
+                <div className={styles.strengthTrack}>
+                  <div
+                    className={styles.strengthFillBear}
+                    style={{ width: `${decision.bear_strength}%` }}
+                  />
+                </div>
+                <span className={styles.strengthValue}>
+                  {decision.bear_strength}/100
+                </span>
+              </div>
+              {decision.risk_level != null && (
+                <div className={styles.riskChip} data-risk={String(decision.risk_level)}>
+                  Risk: {riskLabel(decision.risk_level)}
+                </div>
+              )}
+            </div>
+          )}
           <div className={styles.decisionReasoning}>
             {(decision.price_target != null || decision.time_horizon) && (
               <div className={styles.decisionTargets}>
                 {decision.price_target != null && (
                   <span className={styles.decisionTarget}>
-                    <span className={styles.decisionTargetLabel}>Price target</span>
+                    <span className={styles.decisionTargetLabel}>Modeled scenario</span>
                     <span className={styles.decisionTargetValue}>
                       {decision.price_target.toFixed(2)}
                     </span>
@@ -634,6 +665,11 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
               </div>
             )}
             <Markdown>{decision.reasoning}</Markdown>
+          </div>
+          <div className={styles.decisionOwnership}>
+            This assessment is an analytical output of a simulated research
+            committee, not a recommendation. Any investment decision is yours
+            alone.
           </div>
           {meta.live && (meta.estimatedCostUsd !== undefined || meta.inputTokens !== undefined) && (
             <div className={styles.decisionUsage}>
