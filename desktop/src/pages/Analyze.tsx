@@ -604,13 +604,6 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
         return;
       }
 
-      if (result.kind === 'license_blocked') {
-        setStreamError(
-          'Your Pro trial has ended. Enter a license key under Settings, License to continue running the diligence.',
-        );
-        return;
-      }
-
       handleRef.current = result.handle;
       await result.handle.done;
     } catch (err) {
