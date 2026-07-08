@@ -42,10 +42,12 @@ function sampleEvents(overrides?: { content?: string }): DebateEvent[] {
     {
       type: 'session.complete',
       decision: {
-        action: 'SELL',
-        confidence: 0.65,
+        stance: 'moderately_bearish',
+        conviction: 0.65,
+        bull_strength: 52,
+        bear_strength: 78,
+        risk_level: 'elevated',
         reasoning: 'Trim into strength; valuation embeds autonomy success.',
-        rating: 'Underweight',
         price_target: 337.0,
         time_horizon: '3-6 months',
       },
@@ -60,8 +62,12 @@ describe('buildTranscriptHtml', () => {
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('TSLA · 2026-07-06 · Trading Agents Lab Pro');
     expect(html).toContain('class="action sell"');
-    expect(html).toContain('rating Underweight');
-    expect(html).toContain('price target 337');
+    expect(html).toContain('Moderately bearish');
+    expect(html).toContain('bull thesis 52/100');
+    expect(html).toContain('bear thesis 78/100');
+    expect(html).toContain('risk elevated');
+    expect(html).toContain('modeled scenario 337');
+    expect(html).toContain('Any investment decision is yours alone');
     // Markdown rendered, not echoed: bold -> <strong>, table -> <table>.
     expect(html).toContain('<strong>below</strong>');
     expect(html).toContain('<table>');

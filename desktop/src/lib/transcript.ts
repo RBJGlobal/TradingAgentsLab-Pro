@@ -4,6 +4,7 @@ import type {
   AnalyzeDecision,
   NewsHeadlinesEvent,
 } from './engine-client';
+import { riskLabel, stanceLabel } from './stance';
 
 // Shared with the standalone-HTML transcript generator (transcript-html.tsx),
 // which walks the same event stream — hence the exports below.
@@ -151,12 +152,24 @@ export function buildTranscriptMarkdown(events: DebateEvent[]): string {
   );
 
   if (decision) {
-    lines.push('## Decision', '');
+    lines.push('## Committee Assessment', '');
+    const facts = [
+      `**${stanceLabel(decision.stance)}**, conviction ${(decision.conviction * 100).toFixed(0)}%`,
+    ];
+    if (decision.bull_strength != null && decision.bear_strength != null) {
+      facts.push(
+        `bull thesis ${decision.bull_strength}/100, bear thesis ${decision.bear_strength}/100`,
+      );
+    }
+    if (decision.risk_level != null) {
+      facts.push(`risk ${riskLabel(decision.risk_level).toLowerCase()}`);
+    }
+    lines.push(facts.join(' · '), '');
+    lines.push(decision.reasoning, '');
     lines.push(
-      `**${decision.action}** · confidence ${(decision.confidence * 100).toFixed(0)}%`,
+      '_Analytical output of a simulated research committee, not a recommendation. Any investment decision is yours alone._',
       '',
     );
-    lines.push(decision.reasoning, '');
   }
 
   if (summary) {
