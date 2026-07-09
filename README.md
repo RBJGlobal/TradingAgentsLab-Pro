@@ -10,11 +10,11 @@
 
 Trading Agents Lab Pro runs the real research pipeline from the upstream [TradingAgents](https://github.com/TauricResearch/TradingAgents) project inside a native desktop app: four tool-using analysts (market, fundamentals, news, social sentiment), a bull and bear researcher debate over multiple rounds, a trader synthesis, a three-seat risk committee, and a portfolio manager who chairs the final read. The output is a **Committee Assessment**: an analytical stance (Bullish, Moderately bullish, Neutral, Moderately bearish, Bearish), a conviction level, bull and bear thesis strengths, and a risk level. The app never issues a trade instruction. You read how each side argued, and any investment decision is yours alone.
 
-## How Pro relates to the free app
+## How Pro relates to the Lite app
 
 Both apps are free and open source, from the same maker, with the same interface family.
 
-| | Trading Agents Lab (free) | Trading Agents Lab Pro |
+| | Trading Agents Lab (Lite) | Trading Agents Lab Pro |
 |---|---|---|
 | Engine | Simplified single-pass debate, built for watching the pipeline | The full upstream LangGraph graph: live tool calls, multi-round debates, agent memory |
 | Agents | 8 seats, one turn each | 12 roles, iterative debate rounds |
@@ -22,7 +22,7 @@ Both apps are free and open source, from the same maker, with the same interface
 | Typical run | About a minute | 8 to 15 minutes of genuine research depth |
 | License | AGPL-3.0 | AGPL-3.0 |
 
-If you want a quick read, use the free app. If you want to watch a research desk actually work, use Pro.
+If you want a quick read, use the Lite app. If you want to watch a research desk actually work, use Pro.
 
 ## Mission
 
