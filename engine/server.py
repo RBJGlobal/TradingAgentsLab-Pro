@@ -562,21 +562,23 @@ def build_app(*, token: str) -> FastAPI:
                     sentiment = None
 
             if config is not None:
-                # The upstream library reads the provider key from its env var
-                # at LLM construction and cannot use an OAuth access token, so
-                # the Pro engine requires an API key. Reject up front with a
-                # clear terminal event rather than failing deep in graph build.
-                if is_pro and config.auth_kind != "api_key":
+                # Pro full-graph auth support: api_key (env-var injection) and
+                # OpenAI OAuth (Codex factory patch — see engine/codex_llm.py).
+                # `local` stays rejected: local runtimes haven't been validated
+                # against the tool-heavy graph, so fail loud up front rather
+                # than deep in graph build.
+                if is_pro and config.auth_kind not in ("api_key", "oauth"):
                     evt = {
                         "type": "run.error",
                         "error": (
-                            f"Pro engine requires an API key; {config.auth_kind} "
-                            f"auth is not supported for the full-graph analysis."
+                            f"Pro engine requires an API key or OpenAI OAuth; "
+                            f"{config.auth_kind} auth is not supported for the "
+                            f"full-graph analysis."
                         ),
                     }
                     await ws.send_json(evt)
                     captured_events.append(evt)
-                    await ws.close(code=1008, reason="pro_requires_api_key")
+                    await ws.close(code=1008, reason="pro_auth_unsupported")
                     return
 
                 # The full graph runs on the deep/quick split; reserve against
@@ -688,6 +690,9 @@ def build_app(*, token: str) -> FastAPI:
                         token_cap=token_cap,
                         api_key=config.bearer_token,
                         auth_kind=config.auth_kind,
+                        # Codex backend 401s without the account id; present
+                        # only on the OAuth auth shape (normalized upstream).
+                        oauth_account_id=config.auth.get("account_id") or None,
                         reservation_id=reservation_id,
                         alpha_vantage_key=av_key,
                     )

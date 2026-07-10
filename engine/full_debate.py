@@ -425,6 +425,7 @@ async def full_debate(
     past_context: str = "",
     api_key: Optional[str] = None,
     auth_kind: str = "api_key",
+    oauth_account_id: Optional[str] = None,
     reservation_id: Optional[str] = None,
     alpha_vantage_key: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -436,7 +437,11 @@ async def full_debate(
 
     ``api_key`` is the BYO provider key; when present it is injected into the
     provider's standard env var only for the synchronous graph-construction span
-    (see below). ``reservation_id`` ties this run to a pre-flight CostGuard
+    (see below). On the OAuth path (``auth_kind == "oauth"``) it instead carries
+    the OAuth ACCESS TOKEN and, together with ``oauth_account_id``, routes
+    OpenAI LLM construction through the Codex subscription backend via
+    ``codex_llm.codex_factory_patch`` — same synchronous window, different
+    injection. ``reservation_id`` ties this run to a pre-flight CostGuard
     reservation that is finalized on exit (any exit path) with the metered cost;
     pass ``None`` (the default) to run without CostGuard, as the headless tests do.
     """
@@ -491,11 +496,28 @@ async def full_debate(
         # other debate coroutine can interleave between set and restore (no await
         # point), and the built clients never re-read the env from worker threads.
         provider = (merged.get("llm_provider") or "").lower()
-        env_var = _PROVIDER_ENV_VAR.get(provider) if api_key else None
+        # OAuth (ChatGPT subscription): don't touch the env var — the access
+        # token is not an API key and must not leak into OPENAI_API_KEY where
+        # an unrelated SDK path could pick it up. Instead patch the LLM
+        # factory so provider="openai" builds Codex-backed clients. Same
+        # synchronous construction window, enforced the same way.
+        use_codex = (
+            auth_kind == "oauth" and provider == "openai" and bool(api_key)
+        )
+        env_var = (
+            _PROVIDER_ENV_VAR.get(provider) if (api_key and not use_codex) else None
+        )
         _prev_env: Optional[str] = None
         if env_var and api_key:
             _prev_env = os.environ.get(env_var)
             os.environ[env_var] = api_key
+        if use_codex:
+            from .codex_llm import codex_factory_patch
+
+            _codex_ctx = codex_factory_patch(api_key, oauth_account_id or "")
+            _codex_ctx.__enter__()
+        else:
+            _codex_ctx = None
         try:
             # A fresh graph per session: TradingAgentsGraph holds mutable instance
             # state (self.ticker / self.curr_state), so it must not be shared.
@@ -522,6 +544,8 @@ async def full_debate(
             )
         finally:
             # Restore BEFORE any await/yield so the mutation window stays sync.
+            if _codex_ctx is not None:
+                _codex_ctx.__exit__(None, None, None)
             if env_var and api_key:
                 if _prev_env is None:
                     os.environ.pop(env_var, None)
