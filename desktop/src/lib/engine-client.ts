@@ -170,13 +170,16 @@ export const PROVIDER_MODELS: Record<LLMProvider, ModelChoice[]> = {
  * users. If any of these throws a 400, we demote/remove on a case-by-
  * case basis as the empirical data comes in.
  */
+// Notes are OUR research-context descriptions, not pi-ai's registry blurbs:
+// the upstream notes describe coding use cases ("everyday coding"), which
+// read wrong in a market-research picker. Capability tiers are unchanged.
 export const OPENAI_CODEX_MODELS: ModelChoice[] = [
-  { id: 'gpt-5.4',           label: 'gpt-5.4',           note: 'Strong model for everyday coding', recommended: true },
-  { id: 'gpt-5.2-codex',     label: 'gpt-5.2-codex',     note: 'Frontier agentic coding model' },
-  { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max', note: 'Codex-optimized flagship for deep and fast reasoning' },
-  { id: 'gpt-5.4-mini',      label: 'gpt-5.4-mini',      note: 'Small, fast, and cost-efficient model for simpler coding tasks' },
-  { id: 'gpt-5.3-codex',     label: 'gpt-5.3-codex',     note: 'Coding-optimized model' },
-  { id: 'gpt-5.2',           label: 'gpt-5.2',           note: 'Optimized for professional work and long-running agents' },
+  { id: 'gpt-5.4',           label: 'gpt-5.4',           note: 'Strong all-round model, the best default for the debate', recommended: true },
+  { id: 'gpt-5.2-codex',     label: 'gpt-5.2-codex',     note: 'Frontier agentic model, strong on tool-heavy analyst runs' },
+  { id: 'gpt-5.1-codex-max', label: 'gpt-5.1-codex-max', note: 'Flagship-tier deep reasoning, slower per turn' },
+  { id: 'gpt-5.4-mini',      label: 'gpt-5.4-mini',      note: 'Small and fast, lighter reasoning on long debates' },
+  { id: 'gpt-5.3-codex',     label: 'gpt-5.3-codex',     note: 'Agentic mid-tier, solid tool use' },
+  { id: 'gpt-5.2',           label: 'gpt-5.2',           note: 'Steady for professional work and long-running sessions' },
 ];
 
 /** Returns the model list to show in the picker for a given provider +
