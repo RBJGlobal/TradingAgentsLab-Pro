@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+
 declare module '*.png' {
   const url: string;
   export default url;
@@ -171,6 +172,9 @@ interface TradingAgentsLabBridge {
 }
 
 declare global {
+  // Build-time constant from vite.config.ts `define` (package.json version).
+  const __APP_VERSION__: string;
+
   interface Window {
     tradingAgentsLab: TradingAgentsLabBridge;
   }
