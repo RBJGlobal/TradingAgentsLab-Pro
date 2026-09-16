@@ -50,6 +50,12 @@ except Exception:
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += ["websockets", "httptools", "uvloop"]
 
+# tradingagents/dataflows/fred.py imports pytz at module scope. collect_all on
+# tradingagents should follow it, but fred is only reached through the macro
+# tool-loop at runtime (not by the import-only self-test), so pin it explicitly
+# to guarantee it lands in the frozen bundle. Added with the v0.4.2 refresh.
+hiddenimports += ["pytz"]
+
 # Our own package (relative imports resolve via pathex = repo_root).
 hiddenimports += collect_submodules("engine")
 

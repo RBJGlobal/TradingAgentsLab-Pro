@@ -65,7 +65,10 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 # Analyst nodes: real graph key -> (wire agent name, wire phase).
 _ANALYST_NODES: Dict[str, str] = {
     "Market Analyst": "technical_analyst",
-    "Social Analyst": "sentiment_analyst",
+    # Upstream renamed this graph node "Social Analyst" -> "Sentiment Analyst"
+    # (v0.4.x). The state field (sentiment_report) and our wire name were already
+    # aligned; only the node label lagged. Key on the current label.
+    "Sentiment Analyst": "sentiment_analyst",
     "News Analyst": "news_analyst",
     "Fundamentals Analyst": "fundamental_analyst",
 }
@@ -112,6 +115,24 @@ _AGENT_OF: Dict[str, str] = {
     **_TRADER_NODES,
     **_RISK_NODES,
 }
+
+# Analyst tool nodes -> wire agent name. Upstream keeps the tool node's key as
+# "social" even though the agent node was renamed "Social Analyst" ->
+# "Sentiment Analyst" (v0.4.x), so the tool-node label can no longer be derived
+# from the agent label by string munging. Map explicitly by exact tool-node name.
+_TOOL_NODE_AGENT: Dict[str, str] = {
+    "tools_market": "technical_analyst",
+    "tools_social": "sentiment_analyst",
+    "tools_news": "news_analyst",
+    "tools_fundamentals": "fundamental_analyst",
+}
+
+# Graph node names are the contract between the upstream library and this
+# adapter. If an upstream refresh renames a node (as v0.4.x did:
+# "Social Analyst" -> "Sentiment Analyst"), the old key silently maps to
+# nothing and the node's activity vanishes from the wire. Warn once per unknown
+# node so that class of drift is loud in the engine log instead of invisible.
+_WARNED_UNMAPPED_NODES: set = set()
 
 # The upstream Portfolio Manager emits a native 5-tier rating
 # (Buy/Overweight/Hold/Underweight/Sell). The app deliberately does not
@@ -584,7 +605,7 @@ async def full_debate(
                         continue  # internal message-buffer reset; no user meaning
 
                     if node.startswith("tools_"):
-                        agent = _AGENT_OF.get(node.replace("tools_", "").capitalize() + " Analyst")
+                        agent = _TOOL_NODE_AGENT.get(node)
                         yield {
                             "type": "agent.activity",
                             "agent": agent or node,
@@ -595,7 +616,16 @@ async def full_debate(
 
                     phase = _PHASE_OF.get(node)
                     if phase is None:
-                        continue  # START/END or an unmapped internal node
+                        # START/END and message-buffer resets are expected here;
+                        # anything else is likely an upstream node rename we have
+                        # not caught up to. Warn once so it is not silent.
+                        if node not in ("__start__", "__end__") and node not in _WARNED_UNMAPPED_NODES:
+                            _WARNED_UNMAPPED_NODES.add(node)
+                            sys.stderr.write(
+                                f"[full_debate] unmapped graph node '{node}' "
+                                f"dropped from wire (upstream rename?)\n"
+                            )
+                        continue
 
                     agent = _AGENT_OF.get(node, node)
 
