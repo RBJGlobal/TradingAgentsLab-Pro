@@ -102,8 +102,12 @@ echo "── /analyze"
 body="$(curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -X POST -d "{\"ticker\":\"$TICKER\",\"trade_date\":\"$TRADE_DATE\"}" \
   "$BASE/analyze")"
-echo "$body" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); assert d.get("ok") is True and d["decision"]["action"] == "HOLD"' >/dev/null
-check "/analyze returns HOLD stub" $?
+# /analyze is still the Phase-2 stub (server.py returns a fixed neutral stance).
+# Assert the full stance-model decision shape so a schema regression is caught;
+# the literal value alone is hardcoded and would pass unconditionally. This is a
+# shape gate, NOT coverage of real tradingagents analysis.
+echo "$body" | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); dec=d["decision"]; assert d.get("ok") is True; assert dec["stance"]=="neutral"; assert isinstance(dec["conviction"],(int,float)) and 0<=dec["conviction"]<=1; assert isinstance(dec["bull_strength"],int) and isinstance(dec["bear_strength"],int); assert isinstance(dec["risk_level"],str) and dec["risk_level"]; assert isinstance(dec["reasoning"],str) and dec["reasoning"]' >/dev/null
+check "/analyze returns stance-model stub shape" $?
 
 # /data/summary real data
 echo "── /data/summary?ticker=$TICKER&trade_date=$TRADE_DATE"
