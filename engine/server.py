@@ -601,6 +601,33 @@ def build_app(*, token: str) -> FastAPI:
                         captured_events.append(evt)
                         await ws.close(code=1008, reason="invalid_pro_config")
                         return
+
+                # Wire Alpaca's Benzinga news into the Pro news analyst's
+                # get_news tool when Alpaca is the connected data provider.
+                # Upstream get_news ships only yfinance/alpha_vantage; yfinance's
+                # Yahoo feed returns empty for many equities, while Alpaca (which
+                # already feeds the chrome headlines) is reliable. Prefer Alpaca,
+                # fall back to yfinance so an empty source never blanks the analyst.
+                if is_pro and pro_lib_config is not None:
+                    from . import alpaca_news
+
+                    dc = start.get("data_config")
+                    if (
+                        isinstance(dc, dict)
+                        and str(dc.get("provider", "")).strip().lower() == "alpaca"
+                        and dc.get("key_id")
+                        and dc.get("secret")
+                    ):
+                        alpaca_news.register_alpaca_news_vendor()
+                        alpaca_news.set_alpaca_news_credentials(
+                            dc.get("key_id"), dc.get("secret")
+                        )
+                        tv = dict(pro_lib_config.get("tool_vendors") or {})
+                        tv["get_news"] = "alpaca,yfinance"
+                        pro_lib_config["tool_vendors"] = tv
+                    else:
+                        # Not Alpaca -> ensure no stale creds leak into this run.
+                        alpaca_news.set_alpaca_news_credentials(None, None)
                 reserve_model = (
                     (pro_lib_config or {}).get("deep_think_llm") or config.model
                     if is_pro
