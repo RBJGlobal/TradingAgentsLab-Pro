@@ -289,6 +289,9 @@ export interface ProConfig {
   max_risk_discuss_rounds?: number;
   effort?: string;
   selected_analysts?: string[];
+  /** News analyst headline source: 'auto' | 'alpaca' | 'yfinance'. Absent =
+   * 'auto' (engine prefers Alpaca when connected, else yfinance). */
+  news_source?: string;
   token_cap?: number;
 }
 

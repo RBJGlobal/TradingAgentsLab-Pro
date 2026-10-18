@@ -195,3 +195,26 @@ def register_alpaca_news_vendor() -> None:
     """Register the Alpaca news impl into the upstream ``get_news`` dispatch
     table. Idempotent; does NOT edit the vendored ``tradingagents`` tree."""
     interface.VENDOR_METHODS.setdefault("get_news", {})["alpaca"] = alpaca_get_news
+
+
+def news_vendor_chain(news_source: str, alpaca_ready: bool) -> str:
+    """Map the renderer's News-source preference (Part B) to a ``get_news``
+    vendor chain for ``tool_vendors``.
+
+    - ``"yfinance"``: Yahoo only (the upstream default).
+    - ``"alpaca"``: Alpaca first, Yahoo fallback. If Alpaca is not connected the
+      vendor raises and the chain falls through to Yahoo at runtime, so the
+      preference degrades gracefully rather than erroring.
+    - ``"auto"`` (default, and any unknown value): Alpaca first when it is
+      connected, otherwise Yahoo only.
+
+    yfinance always stays as the tail fallback whenever Alpaca is in the chain,
+    so a single empty source never blanks the news analyst.
+    """
+    choice = (news_source or "auto").strip().lower()
+    if choice == "yfinance":
+        return "yfinance"
+    if choice == "alpaca":
+        return "alpaca,yfinance"
+    # auto / unknown
+    return "alpaca,yfinance" if alpaca_ready else "yfinance"

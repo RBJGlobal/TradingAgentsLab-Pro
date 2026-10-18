@@ -207,3 +207,25 @@ def test_dispatch_falls_back_to_yfinance_when_alpaca_empty(monkeypatch, _restore
 
     out = interface.route_to_vendor("get_news", "TEM", "2026-10-01", "2026-10-15")
     assert out == "## YFINANCE FALLBACK REPORT ##"
+
+
+# ---- Part B: news-source preference -> vendor chain mapping ----------------
+
+
+@pytest.mark.parametrize(
+    "source,alpaca_ready,expected",
+    [
+        ("auto", True, "alpaca,yfinance"),
+        ("auto", False, "yfinance"),
+        ("alpaca", True, "alpaca,yfinance"),
+        ("alpaca", False, "alpaca,yfinance"),  # degrades to Yahoo at runtime
+        ("yfinance", True, "yfinance"),
+        ("yfinance", False, "yfinance"),
+        ("", True, "alpaca,yfinance"),  # empty -> auto
+        ("UNKNOWN", True, "alpaca,yfinance"),  # unknown -> auto
+        ("Alpaca", True, "alpaca,yfinance"),  # case-insensitive
+        ("  yfinance  ", True, "yfinance"),  # whitespace-tolerant
+    ],
+)
+def test_news_vendor_chain(source, alpaca_ready, expected):
+    assert alpaca_news.news_vendor_chain(source, alpaca_ready) == expected

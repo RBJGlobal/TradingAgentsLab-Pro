@@ -602,32 +602,38 @@ def build_app(*, token: str) -> FastAPI:
                         await ws.close(code=1008, reason="invalid_pro_config")
                         return
 
-                # Wire Alpaca's Benzinga news into the Pro news analyst's
-                # get_news tool when Alpaca is the connected data provider.
-                # Upstream get_news ships only yfinance/alpha_vantage; yfinance's
-                # Yahoo feed returns empty for many equities, while Alpaca (which
-                # already feeds the chrome headlines) is reliable. Prefer Alpaca,
-                # fall back to yfinance so an empty source never blanks the analyst.
+                # Select the Pro news analyst's get_news vendor from the user's
+                # News-source preference (Part B). Upstream get_news ships only
+                # yfinance/alpha_vantage; yfinance's Yahoo feed returns empty for
+                # many equities, while Alpaca (which already feeds the chrome
+                # headlines) is reliable. The chain always keeps yfinance as the
+                # fallback so an empty primary never blanks the analyst.
                 if is_pro and pro_lib_config is not None:
                     from . import alpaca_news
 
                     dc = start.get("data_config")
-                    if (
+                    alpaca_ready = (
                         isinstance(dc, dict)
                         and str(dc.get("provider", "")).strip().lower() == "alpaca"
-                        and dc.get("key_id")
-                        and dc.get("secret")
-                    ):
+                        and bool(dc.get("key_id"))
+                        and bool(dc.get("secret"))
+                    )
+                    chain = alpaca_news.news_vendor_chain(
+                        str(pro_config_raw.get("news_source") or "auto"),
+                        alpaca_ready,
+                    )
+                    if "alpaca" in chain:
                         alpaca_news.register_alpaca_news_vendor()
-                        alpaca_news.set_alpaca_news_credentials(
-                            dc.get("key_id"), dc.get("secret")
-                        )
-                        tv = dict(pro_lib_config.get("tool_vendors") or {})
-                        tv["get_news"] = "alpaca,yfinance"
-                        pro_lib_config["tool_vendors"] = tv
-                    else:
-                        # Not Alpaca -> ensure no stale creds leak into this run.
-                        alpaca_news.set_alpaca_news_credentials(None, None)
+                    # Creds only when Alpaca is actually connected; cleared
+                    # otherwise so a prior run's keys can never leak in, and so an
+                    # "alpaca" preference without a connection degrades to Yahoo.
+                    alpaca_news.set_alpaca_news_credentials(
+                        dc.get("key_id") if alpaca_ready else None,
+                        dc.get("secret") if alpaca_ready else None,
+                    )
+                    tv = dict(pro_lib_config.get("tool_vendors") or {})
+                    tv["get_news"] = chain
+                    pro_lib_config["tool_vendors"] = tv
                 reserve_model = (
                     (pro_lib_config or {}).get("deep_think_llm") or config.model
                     if is_pro
