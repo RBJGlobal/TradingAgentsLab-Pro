@@ -44,6 +44,20 @@ export const EFFORT_CAPABLE_MODELS = new Set(['claude-sonnet-4-6']);
 export const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
+/** Where the News analyst pulls headlines (Part B). `auto` prefers Alpaca's
+ * Benzinga feed when Alpaca is connected (under Data Providers) and falls back
+ * to Yahoo; `alpaca` forces Alpaca-first (still Yahoo fallback); `yfinance`
+ * forces Yahoo only. Yahoo stays the fallback whenever Alpaca is in the chain,
+ * so an empty primary source never blanks the analyst. */
+export const NEWS_SOURCES = ['auto', 'alpaca', 'yfinance'] as const;
+export type NewsSource = (typeof NEWS_SOURCES)[number];
+
+export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
+  auto: 'Auto (Alpaca when connected, else Yahoo)',
+  alpaca: 'Alpaca (Benzinga)',
+  yfinance: 'Yahoo Finance',
+};
+
 export interface ProConfigState {
   /** null = use the primary model the user picked on Analyze (the deep model). */
   deepModel: string | null;
@@ -52,6 +66,8 @@ export interface ProConfigState {
   maxDebateRounds: number;
   maxRiskRounds: number;
   selectedAnalysts: AnalystId[];
+  /** News analyst headline source (Part B). Default `auto`. */
+  newsSource: NewsSource;
   /** Hard token-cap backstop; null = no cap (rely on the pre-flight reserve). */
   tokenCap: number | null;
 }
@@ -63,6 +79,7 @@ export const DEFAULT_PRO_CONFIG: ProConfigState = {
   maxDebateRounds: 1,
   maxRiskRounds: 1,
   selectedAnalysts: ['market'],
+  newsSource: 'auto',
   tokenCap: null,
 };
 
@@ -78,11 +95,16 @@ export function loadProConfig(): ProConfigState {
           (ALL_ANALYSTS as readonly string[]).includes(a),
         )
       : DEFAULT_PRO_CONFIG.selectedAnalysts;
+    // Coerce to a known source so a corrupt/older blob can't send a bad value.
+    const newsSource = (NEWS_SOURCES as readonly string[]).includes(parsed.newsSource as string)
+      ? (parsed.newsSource as NewsSource)
+      : DEFAULT_PRO_CONFIG.newsSource;
     return {
       ...DEFAULT_PRO_CONFIG,
       ...parsed,
       // Never allow an empty analyst set (a run with zero analysts is invalid).
       selectedAnalysts: analysts.length > 0 ? analysts : DEFAULT_PRO_CONFIG.selectedAnalysts,
+      newsSource,
     };
   } catch {
     return { ...DEFAULT_PRO_CONFIG };
@@ -130,6 +152,7 @@ export function assembleProConfig(
     max_debate_rounds: state.maxDebateRounds,
     max_risk_discuss_rounds: state.maxRiskRounds,
     selected_analysts: state.selectedAnalysts.slice(),
+    news_source: state.newsSource,
   };
   if (state.tokenCap && state.tokenCap > 0) {
     cfg.token_cap = state.tokenCap;

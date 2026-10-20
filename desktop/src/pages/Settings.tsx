@@ -67,10 +67,13 @@ import {
   ANALYST_LABEL,
   ANALYSTS_NEEDING_DATA_KEY,
   EFFORT_LEVELS,
+  NEWS_SOURCES,
+  NEWS_SOURCE_LABEL,
   loadProConfig,
   saveProConfig,
   type AnalystId,
   type EffortLevel,
+  type NewsSource,
   type ProConfigState,
 } from '../lib/pro-config';
 // OpenAI OAuth is hidden in Pro v1 — see lib/feature-flags.ts for the why
@@ -1835,6 +1838,34 @@ function ProAnalysisTab() {
             </span>
           </label>
         ))}
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>News source</legend>
+        <p className={styles.formHint}>
+          Where the News analyst pulls headlines. Auto prefers Alpaca (Benzinga)
+          when you have Alpaca connected under Data Providers, and falls back to
+          Yahoo Finance. Yahoo can return no headlines for some tickers, so Alpaca
+          is the better default when connected.
+        </p>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Source
+            <select
+              className={styles.costInputField}
+              value={state.newsSource}
+              onChange={(e) =>
+                persist({ ...state, newsSource: e.target.value as NewsSource })
+              }
+            >
+              {NEWS_SOURCES.map((s) => (
+                <option key={s} value={s}>
+                  {NEWS_SOURCE_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </fieldset>
 
       <fieldset className={styles.formGroup}>

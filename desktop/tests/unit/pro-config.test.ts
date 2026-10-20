@@ -109,3 +109,31 @@ describe('loadProConfig recovery', () => {
     expect(loadProConfig().selectedAnalysts).toEqual(['market']);
   });
 });
+
+describe('news source (Part B)', () => {
+  it('defaults to auto and is always sent on the wire', () => {
+    expect(assembleProConfig('m', 'anthropic', base).news_source).toBe('auto');
+  });
+
+  it('sends the chosen source', () => {
+    expect(
+      assembleProConfig('m', 'anthropic', { ...base, newsSource: 'alpaca' }).news_source,
+    ).toBe('alpaca');
+    expect(
+      assembleProConfig('m', 'anthropic', { ...base, newsSource: 'yfinance' }).news_source,
+    ).toBe('yfinance');
+  });
+
+  it('coerces an unknown stored source back to auto', () => {
+    localStorage.setItem(
+      'tal:pro-config',
+      JSON.stringify({ ...base, newsSource: 'bloomberg' }),
+    );
+    expect(loadProConfig().newsSource).toBe('auto');
+  });
+
+  it('round-trips a valid source', () => {
+    saveProConfig({ ...base, newsSource: 'alpaca' });
+    expect(loadProConfig().newsSource).toBe('alpaca');
+  });
+});
