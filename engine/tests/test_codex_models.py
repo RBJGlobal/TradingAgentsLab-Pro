@@ -82,6 +82,11 @@ def test_pick_substitutes_retired_model_with_catalog_default():
     assert codex_models.pick_model("gpt-reserve", models) == ("gpt-6.1-sol", True)
 
 
+def test_pick_on_empty_list_never_raises():
+    assert codex_models.pick_model("gpt-6-luna", []) == ("gpt-6-luna", False)
+    assert codex_models.pick_model(None, []) == (codex_models.FALLBACK_DEFAULT, False)
+
+
 # ---- network behavior -----------------------------------------------------
 
 

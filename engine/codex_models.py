@@ -201,6 +201,10 @@ def pick_model(requested: Optional[str], models: list[CodexModel]) -> tuple[str,
     whose saved choice OpenAI has since retired, without them touching
     Settings.
     """
+    if not models:
+        # parse_catalog never caches an empty list today, but don't let a
+        # future "be tolerant" refactor turn that into an IndexError mid-run.
+        return ((requested or "").strip() or FALLBACK_DEFAULT), False
     slugs = {m.slug for m in models}
     req = (requested or "").strip()
     if req and req in slugs:
