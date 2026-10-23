@@ -25,6 +25,10 @@ import { getOpenAICredentialsForRequest } from './oauth';
 
 const CACHE_KEY = 'tal:codex-models:v1';
 
+/** Backoff while the engine is still starting (~30s total). Exported so
+ * tests can shrink it. */
+export const ENGINE_RETRY_DELAYS_MS: number[] = [1000, 2000, 3000, 5000, 8000, 10000];
+
 export type CodexModelsSource = 'live' | 'cached' | 'fallback';
 
 function withRecommended(models: ModelChoice[]): ModelChoice[] {
@@ -109,7 +113,19 @@ export function useCodexModels(enabled: boolean): CodexModelsState {
           setError('not signed in to ChatGPT');
           return;
         }
-        const res = await listCodexModels(cfg, nonce > 0);
+        // Analyze mounts at app launch, often a second or two before the
+        // engine sidecar is listening, so the first call can fail with a
+        // network error ("Failed to fetch"). Retry with backoff while the
+        // ENGINE is unreachable (res.ok === false), the same startup race
+        // StatusStrip handles. An answer from the engine (even a fallback
+        // because OpenAI refused) is final and is not retried.
+        let res = await listCodexModels(cfg, nonce > 0);
+        for (const delayMs of ENGINE_RETRY_DELAYS_MS) {
+          if (cancelled || res.ok) break;
+          await new Promise((r) => setTimeout(r, delayMs));
+          if (cancelled) return;
+          res = await listCodexModels(cfg, nonce > 0);
+        }
         if (cancelled) return;
         if (!res.ok || !res.models || res.models.length === 0) {
           // Keep whatever list we have, but say why it is not live.
