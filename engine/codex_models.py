@@ -180,7 +180,13 @@ async def list_codex_models(
         sys.stderr.write(
             f"[codex-models] NON-200 status={resp.status_code} body={resp.text[:160]!r}\n"
         )
-        raise CodexModelsUnavailable(f"catalog HTTP {resp.status_code}")
+        # Surface OpenAI's own short message (e.g. a rejected header) so the
+        # renderer can show WHY discovery fell back. It is an error string,
+        # never a credential; trimmed and single-lined for the UI.
+        detail = " ".join((resp.text or "").split())[:140]
+        raise CodexModelsUnavailable(
+            f"catalog HTTP {resp.status_code}" + (f": {detail}" if detail else "")
+        )
 
     try:
         models = parse_catalog(resp.json())

@@ -39,6 +39,7 @@ describe('useCodexModels', () => {
 
     expect(result.current.models.map((m) => m.id)).toEqual(OPENAI_CODEX_MODELS.map((m) => m.id));
     await waitFor(() => expect(result.current.source).toBe('live'));
+    expect(result.current.error).toBeNull();
     expect(result.current.models.map((m) => m.id)).toEqual(['gpt-7-nova', 'gpt-6.1-sol']);
     // First live entry becomes the recommended default.
     expect(result.current.models[0].recommended).toBe(true);
@@ -67,6 +68,7 @@ describe('useCodexModels', () => {
     const { result } = renderHook(() => useCodexModels(true));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.models.map((m) => m.id)).toEqual(OPENAI_CODEX_MODELS.map((m) => m.id));
+    expect(result.current.error).toBe('engine down');
   });
 
   it('does not persist a fallback list as if it were live', async () => {
@@ -74,5 +76,7 @@ describe('useCodexModels', () => {
     const { result } = renderHook(() => useCodexModels(true));
     await waitFor(() => expect(result.current.source).toBe('fallback'));
     expect(localStorage.getItem('tal:codex-models:v1')).toBeNull();
+    // The reason must surface so the UI never shows a fallback as success.
+    expect(result.current.error).toBeTruthy();
   });
 });

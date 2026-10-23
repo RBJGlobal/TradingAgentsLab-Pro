@@ -74,6 +74,8 @@ export interface CodexModelsState {
   models: ModelChoice[];
   source: CodexModelsSource;
   loading: boolean;
+  /** Why the live catalog is not in use (engine/OpenAI error), else null. */
+  error: string | null;
   /** Re-query OpenAI's catalog, bypassing the engine's 15-minute cache. */
   refresh: () => void;
 }
@@ -90,6 +92,7 @@ export function useCodexModels(enabled: boolean): CodexModelsState {
     readCache() ? 'cached' : 'fallback',
   );
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
 
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
@@ -101,12 +104,22 @@ export function useCodexModels(enabled: boolean): CodexModelsState {
       setLoading(true);
       try {
         const cfg = await oauthProviderConfig();
-        if (!cfg || cancelled) return;
+        if (cancelled) return;
+        if (!cfg) {
+          setError('not signed in to ChatGPT');
+          return;
+        }
         const res = await listCodexModels(cfg, nonce > 0);
-        if (cancelled || !res.ok || !res.models || res.models.length === 0) return;
+        if (cancelled) return;
+        if (!res.ok || !res.models || res.models.length === 0) {
+          // Keep whatever list we have, but say why it is not live.
+          setError(res.error ?? 'model catalog unavailable');
+          return;
+        }
         const next = withRecommended(res.models);
         setModels(next);
         setSource(res.source === 'live' ? 'live' : 'fallback');
+        setError(res.source === 'live' ? null : (res.error ?? 'OpenAI catalog unavailable'));
         if (res.source === 'live') writeCache(next);
       } finally {
         if (!cancelled) setLoading(false);
@@ -117,5 +130,5 @@ export function useCodexModels(enabled: boolean): CodexModelsState {
     };
   }, [enabled, nonce]);
 
-  return { models, source, loading, refresh };
+  return { models, source, loading, error, refresh };
 }

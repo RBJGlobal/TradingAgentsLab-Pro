@@ -552,11 +552,16 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     const provider = activeProviderRef.current;
     const authKind = openaiAuthKindRef.current;
     if (provider) {
-      setActiveModel(getRecommendedModel(provider, authKind));
+      // OAuth: the live catalog's default, not the built-in fallback's.
+      setActiveModel(
+        provider === 'openai' && authKind === 'oauth' && codexModels.models[0]
+          ? codexModels.models[0].id
+          : getRecommendedModel(provider, authKind),
+      );
     } else {
       setActiveModel(null);
     }
-  }, []);
+  }, [codexModels.models]);
 
   const onAnalyze = async () => {
     if (!engineReadyRef.current || isStreamingRef.current) return;
@@ -780,7 +785,10 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
           {(manualProvider ||
             (activeProvider &&
               activeModel !== null &&
-              activeModel !== getRecommendedModel(activeProvider, openaiAuthKind))) && (
+              activeModel !==
+                (activeProvider === 'openai' && openaiAuthKind === 'oauth' && codexModels.models[0]
+                  ? codexModels.models[0].id
+                  : getRecommendedModel(activeProvider, openaiAuthKind)))) && (
             <button
               type="button"
               className={styles.providerReset}
@@ -794,6 +802,31 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
           )}
         </div>
       </header>
+
+      {activeProvider === 'openai' && openaiAuthKind === 'oauth' && (
+        // Make live-vs-fallback visible. A silent fallback looks exactly like
+        // success until OpenAI's next model retirement breaks OAuth again.
+        <p className={styles.helper} data-testid="codex-models-source">
+          {codexModels.loading
+            ? 'Models: checking your ChatGPT account...'
+            : codexModels.source === 'live'
+              ? 'Models: live from your ChatGPT account.'
+              : codexModels.source === 'cached' && !codexModels.error
+                ? 'Models: last list from your ChatGPT account.'
+                : `Models: built-in list. OpenAI catalog unavailable${
+                    codexModels.error ? ` (${codexModels.error})` : ''
+                  }.`}{' '}
+          <button
+            type="button"
+            className={styles.providerReset}
+            onClick={codexModels.refresh}
+            disabled={codexModels.loading || isStreaming}
+            data-testid="codex-models-refresh"
+          >
+            Refresh
+          </button>
+        </p>
+      )}
 
       {activeProvider === null && <ProviderSetupCallout />}
 
