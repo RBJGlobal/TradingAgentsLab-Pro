@@ -295,6 +295,43 @@ def build_app(*, token: str) -> FastAPI:
             except Exception:  # noqa: BLE001 — best-effort cleanup
                 pass
 
+    @app.post("/llm/models", dependencies=bearer)
+    async def llm_models(req: LLMModelsRequest) -> dict[str, Any]:
+        """Models the user's ChatGPT account can use on the OAuth (Codex) path.
+
+        Live from OpenAI's Codex catalog (see engine/codex_models.py), so the
+        Analyze picker tracks OpenAI's retirements without an app release.
+        Falls back to a small built-in list when the catalog is unreachable;
+        `source` tells the renderer which one it got. OAuth credentials arrive
+        per request (the renderer already sends them for live runs) and are
+        never persisted by the engine.
+        """
+        from . import codex_models
+
+        config = ProviderConfig.from_dict(req.provider_config)
+        if config is None or config.provider != "openai" or config.auth_kind != "oauth":
+            return {"ok": False, "error": "model discovery is only for OpenAI OAuth"}
+        try:
+            models = await codex_models.list_codex_models(
+                config.bearer_token,
+                str(config.auth.get("account_id") or ""),
+                force_refresh=req.refresh,
+            )
+        except codex_models.CodexModelsUnavailable as exc:
+            return {
+                "ok": True,
+                "source": "fallback",
+                "default": codex_models.FALLBACK_DEFAULT,
+                "models": codex_models.FALLBACK_MODELS,
+                "error": str(exc),
+            }
+        return {
+            "ok": True,
+            "source": "live",
+            "default": models[0].slug,
+            "models": [m.to_choice() for m in models],
+        }
+
     @app.get("/telegram/status", dependencies=bearer)
     async def telegram_status() -> dict[str, Any]:
         return telegram_bot.status().to_dict()
@@ -601,6 +638,27 @@ def build_app(*, token: str) -> FastAPI:
                         captured_events.append(evt)
                         await ws.close(code=1008, reason="invalid_pro_config")
                         return
+
+                # OpenAI OAuth (Codex) self-heal: OpenAI retires ChatGPT-sign-in
+                # models on its own schedule, so a saved/default model may no
+                # longer exist for this account. Swap any unavailable model for
+                # the account's current default from the live catalog before the
+                # run starts, instead of failing every node with a 400. See
+                # engine/codex_models.py. Cached per account, so this is one
+                # catalog fetch per 15 minutes, not one per model.
+                if config.provider == "openai" and config.auth_kind == "oauth":
+                    from . import codex_models
+
+                    oauth_acct = str(config.auth.get("account_id") or "")
+                    oauth_token = config.bearer_token
+                    config.model, _note = await codex_models.resolve_model(
+                        config.model, oauth_token, oauth_acct
+                    )
+                    if pro_lib_config is not None:
+                        for key in ("deep_think_llm", "quick_think_llm"):
+                            pro_lib_config[key], _ = await codex_models.resolve_model(
+                                pro_lib_config.get(key), oauth_token, oauth_acct
+                            )
 
                 # Select the Pro news analyst's get_news vendor from the user's
                 # News-source preference (Part B). Upstream get_news ships only
@@ -962,6 +1020,14 @@ class CostGuardCheckRequest(BaseModel):
 
 class CostGuardReserveRequest(CostGuardCheckRequest):
     override: bool = False
+
+
+class LLMModelsRequest(BaseModel):
+    """OAuth provider_config for Codex model discovery. `refresh` bypasses
+    the engine's 15-minute per-account catalog cache."""
+
+    provider_config: dict[str, Any]
+    refresh: bool = False
 
 
 class LLMTestRequest(BaseModel):
