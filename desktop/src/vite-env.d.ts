@@ -63,6 +63,7 @@ interface OAuthStatusBridge {
   needsRefresh?: boolean;
   planType?: string;
   isFreeTier?: boolean;
+  reauthRequired?: boolean;
 }
 
 interface OAuthProgressEventBridge { message: string }
@@ -80,6 +81,7 @@ interface OAuthBridge {
   openaiStart: () => Promise<OAuthStartResultBridge>;
   openaiStatus: () => Promise<OAuthStatusBridge>;
   openaiDisconnect: () => Promise<boolean>;
+  openaiMarkExpired: () => Promise<void>;
   openaiPromptResponse: (value: string) => void;
   openaiCredentials: () => Promise<OAuthCredentialsBridge | null>;
   onProgress: (handler: (event: OAuthProgressEventBridge) => void) => () => void;
