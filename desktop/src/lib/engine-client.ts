@@ -471,6 +471,23 @@ export interface RunTokenCapEvent {
   message: string;
 }
 
+/** Pro-only terminal event: Cost Guard's mid-run USD stop. `reason` is
+ * "cap" (continuing could push spend past an enabled daily/weekly/monthly
+ * cap; `dimension` names it) or "runaway" (an override or uncapped run
+ * reached about 3x its estimate). Like run.token_cap, a budget stop rather
+ * than a failure: no session.complete follows and the WS closes cleanly.
+ * `message` is user-facing copy from the engine. */
+export interface RunCostCapEvent {
+  type: 'run.cost_cap';
+  used_usd: number;
+  limit_usd: number;
+  reason: 'cap' | 'runaway';
+  dimension?: 'daily' | 'weekly' | 'monthly' | null;
+  input_tokens?: number;
+  output_tokens?: number;
+  message: string;
+}
+
 /** Pro-only terminal event: a node raised and the run could not complete.
  * Like run.token_cap, the WS may still close cleanly, so the UI detects this
  * event rather than relying on the socket close code. */
@@ -500,6 +517,7 @@ export type DebateEvent =
   | SessionCompleteEvent
   | CostBlockedEvent
   | RunTokenCapEvent
+  | RunCostCapEvent
   | RunErrorEvent
   | import('./webhooks').WebhookReportEvent;
 

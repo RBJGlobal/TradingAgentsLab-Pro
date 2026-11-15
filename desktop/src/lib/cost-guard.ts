@@ -51,6 +51,11 @@ export interface CostGuardReserveResult {
   expires_at: string;
   auth_kind: 'api_key' | 'oauth' | 'local';
   override: boolean;
+  /** Mid-run USD stop the engine stored on the reservation (Pro). Null for
+   * OAuth/local runs, which cost $0. */
+  usd_limit?: number | null;
+  limit_reason?: 'cap' | 'runaway' | null;
+  limit_dimension?: 'daily' | 'weekly' | 'monthly' | null;
 }
 
 export interface CostGuardConfigUpdate {
@@ -61,10 +66,26 @@ export interface CostGuardConfigUpdate {
   cap_sessions_per_day?: number;
 }
 
+/** The Pro run shape that drives the cost estimate: the cost-relevant subset
+ * of ProConfig. The engine's Pro estimator reads exactly these fields. */
+export interface CostGuardProFields {
+  deep_think_llm?: string;
+  quick_think_llm?: string;
+  selected_analysts?: string[];
+  max_debate_rounds?: number;
+  max_risk_discuss_rounds?: number;
+}
+
 export interface CostGuardCheckRequest {
   model: string;
   auth_kind: 'api_key' | 'oauth' | 'local';
   max_tokens: number;
+  /** Provider id, so the engine prices an unknown model at its provider's
+   * ceiling. Inferred from the model id when absent. */
+  provider?: string;
+  /** Present for a Pro full-graph run: the engine uses its Pro estimate, a
+   * 60-minute reservation, and a mid-run USD stop. */
+  pro?: CostGuardProFields;
 }
 
 export interface CostGuardReserveRequest extends CostGuardCheckRequest {
@@ -81,6 +102,52 @@ export interface CostGuardBlockedEvent {
   est_cost_usd: number;
   message: string;
 }
+
+// ---- Pro request assembly ---------------------------------------------------
+
+/**
+ * Build the /cost-guard/reserve body for a Pro run. Pure so it is unit
+ * tested. The `pro` block carries the same run shape the WS start frame's
+ * `pro_config` does, so the engine's estimate for this reservation equals
+ * the one its WS auto-reserve would compute for the same run.
+ */
+export function buildProReserveRequest(
+  providerConfig: {
+    provider: string;
+    auth: { type: 'api_key' | 'oauth' | 'local' };
+    model: string;
+  },
+  proConfig: CostGuardProFields,
+  maxTokens: number,
+): CostGuardReserveRequest {
+  const pro: CostGuardProFields = {
+    deep_think_llm: proConfig.deep_think_llm,
+    quick_think_llm: proConfig.quick_think_llm,
+    selected_analysts: proConfig.selected_analysts,
+    max_debate_rounds: proConfig.max_debate_rounds,
+    max_risk_discuss_rounds: proConfig.max_risk_discuss_rounds,
+  };
+  return {
+    // Kept for older engines without the Pro estimator: they reserve against
+    // this single (deep) model.
+    model: proConfig.deep_think_llm || providerConfig.model || '',
+    auth_kind: providerConfig.auth.type,
+    max_tokens: maxTokens,
+    provider: providerConfig.provider,
+    pro,
+  };
+}
+
+/** Events after which the engine has settled the run's spend: a completed
+ * session, or a Pro run that ended early (cost cap, token cap, error). An
+ * aborted run still bills what it spent, so the spend pill must refresh on
+ * these too, not only on session.complete. */
+export const SPEND_SETTLED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'session.complete',
+  'run.cost_cap',
+  'run.token_cap',
+  'run.error',
+]);
 
 // ---- Errors -----------------------------------------------------------------
 

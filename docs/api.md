@@ -225,6 +225,63 @@ Lists the user's saved watchlist tickers, newest-first by `added_at`. Same SQLit
 
 CORS-allowed for the renderer origin (`DELETE` is in `Access-Control-Allow-Methods`).
 
+### Cost Guard endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /cost-guard/state` | Current spend (`daily_usd`, `weekly_usd`, `monthly_usd`, `sessions_today`) and config |
+| `PUT /cost-guard/config` | Patch caps and the enable flag (only the fields sent change) |
+| `POST /cost-guard/check` | Dry run: would this run be allowed? No reservation is created |
+| `POST /cost-guard/reserve` | Atomic check and reservation; returns a `reservation_id` or HTTP 402 |
+
+New databases are seeded with a $5.00 daily, $15.00 weekly and $45.00 monthly cap and no sessions-per-day cap. Existing databases keep their configured caps.
+
+#### `POST /cost-guard/check` and `POST /cost-guard/reserve`
+
+```jsonc
+{
+  "model": "claude-sonnet-4-6",   // the run's primary (deep) model
+  "auth_kind": "api_key",         // api_key | oauth | local
+  "max_tokens": 400,              // simplified-debate budget; unused for Pro
+  "provider": "anthropic",        // optional; inferred from the model id when absent
+  "override": false,              // reserve only: run anyway past a cap
+  // Optional. Present for a Trading Agents Lab Pro full-graph run.
+  "pro": {
+    "deep_think_llm": "claude-sonnet-4-6",
+    "quick_think_llm": "claude-sonnet-4-6",
+    "selected_analysts": ["market", "social", "news", "fundamentals"],
+    "max_debate_rounds": 1,
+    "max_risk_discuss_rounds": 1
+  }
+}
+```
+
+Without `pro`, the estimate is the simplified debate's worst case (12 agents at `max_tokens`). With `pro`, it is the Pro full-graph estimate (`cost_guard.pro_reservation_estimate`): per-node token budgets calibrated to about 1.4x a measured default run, the research manager and portfolio manager priced at `deep_think_llm` and every other node at `quick_think_llm`, input growing with each extra debate or risk round, billed output scaled 2.5x for models that think by default, plus the post-graph thesis-scoring call. Missing or empty `selected_analysts` means all four. The WebSocket auto-reserve builds the same `pro` block from the start frame's `pro_config`, so both paths give the same number for the same run.
+
+Every per-token model is priced, never $0: an exact rate row, then the row for a dated id (`claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` row), then an OpenRouter price learned at runtime, then the vendor's own row for an OpenRouter id, then a family ceiling (for example $15 / $75 per million tokens for an unrecognised Claude or an unknown vendor). OAuth and local runs are $0.
+
+`check` returns `{allow, over_dimension, override_available, current, config, est_reservation_usd}`. `reserve` returns:
+
+```jsonc
+{
+  "reservation_id": "0193...-a1b2c3d4",
+  "est_cost_usd": 1.3073,
+  "expires_at": "2026-11-14T18:00:00Z",
+  "auth_kind": "api_key",
+  "override": false,
+  // Mid-run USD stop stored on the reservation (null for OAuth / local).
+  "usd_limit": 5.0,
+  "limit_reason": "cap",          // "cap" | "runaway" | null
+  "limit_dimension": "daily"      // "daily" | "weekly" | "monthly" | null
+}
+```
+
+`usd_limit` is decided at reserve time. For a normal run it is the smallest headroom left under any enabled USD cap (cap minus completed spend and other live reservations in that window). For an override run, or when Cost Guard is disabled or no USD cap is enabled, it is 3x `est_cost_usd` (a runaway stop). The Pro engine reads it at run start and ends the run with `run.cost_cap` before a call that could cross it.
+
+Reservations expire after 15 minutes, or 60 minutes when `pro` is present. A blocked reserve returns HTTP 402 with `detail: {error: "cost_guard_blocked", over_dimension, spend, config, est_cost_usd}`.
+
+What counts as spend in each window: completed sessions, live reservations at their estimate, and the real cost of runs that ended early (cost cap, token cap, error, or a stopped stream), which write no session row.
+
 ## WebSocket endpoint
 
 ### `WS /stream?token=<token>`
@@ -388,7 +445,33 @@ Emitted ONCE after `session.complete`, only when the start frame carried a non-e
 }
 ```
 
-When `provider_config` was supplied in the start frame, the engine populates `live`, `provider`, `model`, `input_tokens`, `output_tokens`, and `estimated_cost_usd`. The renderer uses these to render a "Live · provider · model" badge on the decision card and to log a per-session cost estimate. Cost is calculated using local rate tables (`engine/llm_providers.py:_COST_PER_M_TOKENS`) and is **never** authoritative — it's a budgeting hint, not a billing record. The OpenRouter passthrough has no rate entries since the actual cost depends on the underlying model — `estimated_cost_usd` will read 0.0 in that case.
+When `provider_config` was supplied in the start frame, the engine populates `live`, `provider`, `model`, `input_tokens`, `output_tokens`, and `estimated_cost_usd`. The renderer uses these to render a "Live · provider · model" badge on the decision card and to log a per-session cost estimate. Cost is calculated using local rate tables (`engine/llm_providers.py:_COST_PER_M_TOKENS`) and is **never** authoritative: it's a budgeting hint, not a billing record. A model with no rate row (an OpenRouter id, a new model) is priced from a high family estimate, never 0.0; see Cost Guard endpoints.
+
+##### 9. Pro terminal events: `run.cost_cap`, `run.token_cap`, `run.error`
+
+A Trading Agents Lab Pro full-graph run can end without `session.complete`. The server still closes with `1000`, so the renderer detects these events. Nothing is written to History, but the run's real cost so far is billed to the Cost Guard totals.
+
+```jsonc
+// Cost Guard's mid-run USD stop (see usd_limit under Cost Guard endpoints).
+{
+  "type": "run.cost_cap",
+  "used_usd": 0.87,           // spent so far, at the same rates as the ledger
+  "limit_usd": 0.9,
+  "reason": "cap",            // "cap" | "runaway" (override / uncapped, 3x estimate)
+  "dimension": "daily",       // which cap set the limit; null for "runaway"
+  "input_tokens": 151200,
+  "output_tokens": 25800,
+  "message": "Stopped: this run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
+}
+
+// The optional per-run token cap was reached.
+{ "type": "run.token_cap", "used": 150321, "cap": 150000, "message": "..." }
+
+// A graph node raised.
+{ "type": "run.error", "error": "..." }
+```
+
+The USD stop is checked before each LLM call: when spent so far plus the largest single call seen so far could cross `limit_usd`, the call is refused and the graph halts, so a run overshoots by at most one call. The post-graph thesis-scoring call is skipped (strength bars left empty) when it could cross the limit. During a Pro run, `cost.usage.est_cost_usd` carries the running cost at those same rates.
 
 ##### Server close
 

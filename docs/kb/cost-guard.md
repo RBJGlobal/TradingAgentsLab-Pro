@@ -1,6 +1,6 @@
 # Cost Guard
 
-*Stacked daily / weekly / monthly USD caps and an optional sessions-per-day rate cap. Optional. Off by default. Override per-run.*
+*Stacked daily / weekly / monthly USD caps and an optional sessions-per-day rate cap. On by default, can be turned off. Override per-run.*
 
 > **For educational research and paper trading. This is not investment advice.**
 
@@ -8,18 +8,20 @@
 
 ## What it is
 
-Cost Guard is a quota layer that sits in front of the live LLM debate. Before every paid-API session, the engine estimates the worst-case cost of the debate and checks it against the caps you've set. If the cost would push any cap over the limit, the request is blocked and a modal opens, you can either **Cancel** or **Override and run anyway**. The override is per-run; it does not raise the cap.
+Cost Guard is a quota layer that sits in front of the live LLM debate. Before every paid-API session, the engine estimates the cost of the debate and checks it against the caps you've set. If the cost would push any cap over the limit, the request is blocked and a modal opens, you can either **Cancel** or **Override and continue**. The override is per-run; it does not raise the cap.
 
 The four cap dimensions:
 
 | Dimension | What it limits |
 |---|---|
 | **Daily** | USD spent across all debates that started today (UTC) |
-| **Weekly** | USD spent across the rolling 7-day window |
-| **Monthly** | USD spent across the rolling 30-day window |
+| **Weekly** | USD spent across debates that started this week (since Monday 00:00 UTC) |
+| **Monthly** | USD spent across debates that started this calendar month (UTC) |
 | **Sessions per day** | Count of debates started today, regardless of cost |
 
 A cap of `0` means **disabled**. You can enable any subset, e.g. monthly USD only, or sessions-per-day only.
+
+> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. If you already had Cost Guard set up, your caps are kept as they were. One default Pro analysis on Claude Sonnet 4.6 costs about $1, so an older $1.00 daily cap will usually block it and offer the override: raise the daily cap in Settings if that happens.
 
 ---
 
@@ -50,7 +52,9 @@ The engine computes a per-session cost using a static **cost rate table** (`engi
 | API-key on any per-token-billed provider | Real token usage × rate table. Logged on `session.complete`. |
 | **OpenAI OAuth** (ChatGPT subscription) | **$0**. Subscription billing happens outside our app; we record 0 so the cost ledger only reflects per-token API spend. |
 | **Local LLM** (Ollama / LM Studio) | **$0**. Local sessions cost nothing in real dollars. |
-| **OpenRouter** | Recorded as `0.0` since model rates vary by underlying model and we don't track them. The rate cap (sessions-per-day) is what you'd use to discipline OpenRouter usage. |
+| **OpenRouter** | Priced at the price OpenRouter lists for the model when the app has loaded its catalog, otherwise at the underlying vendor's own rate (for example `openai/gpt-4o-mini` at the gpt-4o-mini rate). |
+
+**Unknown models are never priced at $0.** A model with no row in the rate table (a newly released model, a dated model id, an unfamiliar OpenRouter vendor) is priced from a deliberately high estimate for its family, for example $15 per million input tokens and $75 per million output tokens for an unrecognised Claude model or an unknown vendor. Over-estimating is the safe direction: Cost Guard stops sooner, never later. A dated id such as `claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` rate.
 
 OAuth and Local sessions **skip** the three USD caps but **do count** against the sessions-per-day rate cap, even free runs benefit from quota discipline on runaway debate counts.
 
@@ -61,7 +65,7 @@ OAuth and Local sessions **skip** the three USD caps but **do count** against th
 Before a live debate kicks off, the renderer:
 
 1. **Estimates worst-case cost** for the session (assumes every agent maxes out its output budget, transcript grows triangularly across agents).
-2. **POSTs `/cost-guard/reserve`** with `{model, auth_kind, max_tokens}`.
+2. **POSTs `/cost-guard/reserve`** with `{model, auth_kind, max_tokens, provider}`.
 3. If the reservation succeeds → the debate proceeds with a `reservation_id` threaded on the WebSocket start frame.
 4. If the reservation fails with `CostGuardBlocked` → the **Cost Guard modal** opens.
 
@@ -73,9 +77,23 @@ The modal shows:
 
 You then choose:
 - **Cancel**, the debate aborts. No tokens spent.
-- **Override and run anyway**, the renderer re-reserves with `override=true`. The session runs, and the cost is added to the rolling totals just like any other run. **The cap itself does not change.**
+- **Override and continue**, the renderer re-reserves with `override=true`. The session runs, and the cost is added to the totals just like any other run. **The cap itself does not change.**
 
 A three-second anti-tamper countdown disables the Override button on first appearance so you can't accidentally double-click through it. The Cancel button is always enabled.
+
+> **Pro** Trading Agents Lab Pro runs the full multi-agent graph, where analysts call data tools as many times as they need and no single step has a fixed length. No number computed before the run can be a true maximum, so the Pro estimate is a realistic figure instead: about 1.4 times what a typical run costs. It is built node by node: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model. Extra debate or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output. With the default settings (four analysts, one round of each debate, Claude Sonnet 4.6) the estimate is about $1.31. The real protection is the mid-run stop below.
+
+---
+
+## The mid-run stop
+
+> **Pro** Because the estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before every model call, it checks whether that call could push your spending past an enabled cap, using the same prices that get recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: "Stopped: this run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
+>
+> - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left when the run starts (other runs in progress count against that room). A run that costs more than its estimate but stays under your caps finishes normally.
+> - **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is off or no USD cap is set.
+> - **ChatGPT sign-in (OAuth) runs** cost $0 per token, so they have no dollar stop. The optional token cap in Settings still applies.
+>
+> If the final thesis-scoring step could cross the limit, it is skipped and the analysis ends without the strength bars. **A run that stops early still counts:** what it spent up to that point is added to your daily, weekly and monthly totals, even though it does not appear in History.
 
 ---
 
@@ -84,6 +102,8 @@ A three-second anti-tamper countdown disables the Override button on first appea
 Cost Guard uses a **time-of-check-to-time-of-use safe** reservation pattern: the database insert of the reservation row is the atomic check. Two simultaneous debates cannot both squeeze under the same cap, the first to insert wins; the second sees the bumped totals and gets blocked.
 
 Reservations have a **15-minute TTL**. If a debate ends cleanly, the reservation is finalized with real token usage replacing the worst-case estimate. If the renderer crashes mid-debate, the reservation expires and the slot frees up. A background sweeper cleans expired reservations on every state read.
+
+> **Pro** A Trading Agents Lab Pro reservation lives for **60 minutes**, because a full-graph analysis can take 6 to 11 minutes at the default settings and longer with extra rounds. If the app crashes mid-run, the reservation frees itself within the hour. A run that lasts longer than its reservation still records what it really spent.
 
 ---
 
@@ -103,7 +123,7 @@ Tune to your risk tolerance:
 - **Stub debates** (no provider configured), never charged. They run for free against the canned content.
 - **OAuth debates**, subscription billing is out-of-band. We record $0.
 - **Local LLM debates**, $0.
-- **Failed sessions**, if the LLM provider errors before any tokens are spent, the reservation is finalized at 0.
+- **Failed sessions**, if the LLM provider errors before any tokens are spent, the reservation is finalized at 0. A session that stops part way through (a cap, an error, or you pressing Stop) is billed for the tokens it already used.
 
 ---
 
@@ -123,11 +143,11 @@ For unset caps (value = 0 / disabled), the bar shows the raw spend with no fill,
 
 ## Resetting spend
 
-Spend totals are **rolling windows**, not user-resettable values. They automatically roll forward as time passes:
+Spend totals are **calendar windows**, not user-resettable values. They reset automatically as time passes:
 
 - Daily totals reset at **00:00 UTC**.
-- Weekly totals shed entries older than 7 days each midnight.
-- Monthly totals shed entries older than 30 days each midnight.
+- Weekly totals reset at 00:00 UTC each Monday.
+- Monthly totals reset at 00:00 UTC on the first day of each month.
 
 There is **no manual reset**, by design, so spend history can't be wiped to dodge a cap. If you need to forget historical data entirely, you can quit the app and delete `sessions.db` (plus any `sessions.db-wal` and `sessions.db-shm` beside it). The installed app keeps it at `~/Library/Application Support/Trading Agents Lab Pro/sessions.db`; running from source, it is `<repo>/data/sessions.db`. See [security-and-storage.md](security-and-storage.md). This is destructive and not recommended; debate history is the same DB.
 

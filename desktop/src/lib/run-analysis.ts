@@ -22,6 +22,8 @@ import {
 } from './engine-client';
 import {
   CostGuardBlocked,
+  SPEND_SETTLED_EVENT_TYPES,
+  buildProReserveRequest,
   reserveCostGuard,
 } from './cost-guard';
 import { getSecret } from './secrets';
@@ -101,14 +103,10 @@ export async function runAnalysis(
 
   let reservationId: string | undefined;
   if (providerConfig) {
-    // Reserve against the deep model (the pricier of the split) so the
-    // pre-flight budget gate is the conservative one for a full-graph run.
-    const cgModel = proConfig.deep_think_llm || providerConfig.model || '';
-    const reserveReq = {
-      model: cgModel,
-      auth_kind: providerConfig.auth.type,
-      max_tokens: maxTokens,
-    };
+    // Send the Pro run shape so the engine prices this run with its Pro
+    // full-graph estimate (per-node, deep vs quick models, round counts,
+    // analyst count) and stores the mid-run USD stop on the reservation.
+    const reserveReq = buildProReserveRequest(providerConfig, proConfig, maxTokens);
     try {
       const reservation = await reserveCostGuard(reserveReq);
       reservationId = reservation.reservation_id;
@@ -134,12 +132,13 @@ export async function runAnalysis(
   // fires regardless of caller. StatusStrip's spend pill + History
   // refresh listen on this event; without it the spend pill stays stale
   // for up to 30s after session.complete (the StatusStrip's 30s poll
-  // interval).
+  // interval). A Pro run that stops early (run.cost_cap, run.token_cap,
+  // run.error) still bills what it spent, so those refresh the pill too.
+  const refreshSpend = () =>
+    window.dispatchEvent(new CustomEvent('tal:session-complete'));
   const wrappedOnEvent = (event: DebateEvent) => {
     callbacks.onEvent(event);
-    if (event.type === 'session.complete') {
-      window.dispatchEvent(new CustomEvent('tal:session-complete'));
-    }
+    if (SPEND_SETTLED_EVENT_TYPES.has(event.type)) refreshSpend();
   };
 
   const handle = await streamDebate(
@@ -159,7 +158,14 @@ export async function runAnalysis(
     wrappedOnEvent,
     callbacks.onError,
   );
-  return { kind: 'streaming', handle };
+  // The engine finalizes the reservation (the real cost of an aborted or
+  // user-stopped run) only after its terminal event, just before the socket
+  // closes. Refresh once more when the stream ends so the pill shows the
+  // settled number rather than the in-flight estimate.
+  const done = handle.done.finally(() => {
+    if (providerConfig) refreshSpend();
+  });
+  return { kind: 'streaming', handle: { close: () => handle.close(), done } };
 }
 
 async function resolveProviderConfig(
