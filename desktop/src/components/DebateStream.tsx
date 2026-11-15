@@ -435,6 +435,25 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
         </header>
       )}
 
+      {/* A run that stopped early also gets a banner at the top, so the
+          reason is visible without scrolling to the notice at the end of
+          the transcript. Same message as the bottom notice. */}
+      {terminal && (
+        <div
+          className={`${styles.terminalBanner} ${
+            terminal.kind === 'error' ? styles.terminalBannerError : ''
+          }`}
+          role="alert"
+          data-testid="terminal-banner"
+          data-terminal={terminal.kind}
+        >
+          <span className={styles.terminalBannerLabel}>
+            {terminal.kind === 'error' ? 'Analysis failed' : 'Analysis stopped'}
+          </span>
+          <span>{terminal.message}</span>
+        </div>
+      )}
+
       {summary && (
         <div className={styles.summaryStrip}>
           <div className={styles.summaryItem}>

@@ -311,6 +311,35 @@ a.newsTitle:hover {
   border-color: var(--tal-negative);
 }
 
+/* Top-of-stream banner for an early stop (cost cap, token cap) or failure.
+   Compact, one block, same accent family as the bottom notice. */
+.terminalBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--tal-space-2) var(--tal-space-3);
+  padding: var(--tal-space-3) var(--tal-space-4);
+  border: 1px solid var(--tal-accent-border);
+  border-left-width: 3px;
+  border-radius: var(--tal-radius-md);
+  background: var(--tal-accent-muted);
+  color: var(--tal-text-primary);
+  font-size: var(--tal-text-sm);
+}
+
+.terminalBannerError {
+  border-color: var(--tal-negative);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.terminalBannerLabel {
+  font-family: var(--tal-font-mono);
+  font-size: var(--tal-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--tal-text-secondary);
+}
+
 .decisionLabel {
   grid-column: 1;
   grid-row: 1;

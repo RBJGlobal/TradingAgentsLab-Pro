@@ -98,4 +98,34 @@ describe('run.cost_cap notice', () => {
     // No em or en dashes in user-facing copy.
     expect(notice.textContent).not.toMatch(/[–—]/);
   });
+
+  it('also shows the stop as a banner at the top of the stream', () => {
+    const { container } = render(
+      <DebateStream
+        events={[
+          { type: 'session.start', ticker: 'NVDA', trade_date: '2026-11-13' } as DebateEvent,
+          COST_CAP,
+        ]}
+        isStreaming={false}
+      />,
+    );
+    const banner = screen.getByTestId('terminal-banner');
+    expect(banner.getAttribute('data-terminal')).toBe('cost_cap');
+    expect(banner.getAttribute('role')).toBe('alert');
+    expect(banner.textContent).toContain(CAP_MESSAGE);
+    // The banner comes before the bottom notice in document order.
+    const nodes = Array.from(container.querySelectorAll('[data-testid]'));
+    const ids = nodes.map((n) => n.getAttribute('data-testid'));
+    expect(ids.indexOf('terminal-banner')).toBeLessThan(ids.indexOf('terminal-notice'));
+  });
+
+  it('shows no banner for a run that completed', () => {
+    render(
+      <DebateStream
+        events={[{ type: 'session.start', ticker: 'NVDA', trade_date: '2026-11-13' } as DebateEvent]}
+        isStreaming={false}
+      />,
+    );
+    expect(screen.queryByTestId('terminal-banner')).toBeNull();
+  });
 });
