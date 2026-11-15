@@ -115,7 +115,7 @@ export function buildProReserveRequest(
   providerConfig: {
     provider: string;
     auth: { type: 'api_key' | 'oauth' | 'local' };
-    model: string;
+    model?: string;
   },
   proConfig: CostGuardProFields,
   maxTokens: number,
