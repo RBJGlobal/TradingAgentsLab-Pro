@@ -655,7 +655,8 @@ async def live_debate(
                 0.0
                 if free
                 else estimate_cost(
-                    config.model, state.input_tokens, state.output_tokens
+                    config.model, state.input_tokens, state.output_tokens,
+                    provider=config.provider,
                 )
             )
             yield {
@@ -666,7 +667,10 @@ async def live_debate(
                 "free": free,
             }
 
-        cost = estimate_cost(config.model, state.input_tokens, state.output_tokens)
+        cost = estimate_cost(
+            config.model, state.input_tokens, state.output_tokens,
+            provider=config.provider,
+        )
         duration = time.time() - started_at
         sys.stderr.write(
             f"[live_debate] provider={config.provider} auth={config.auth_kind} "
@@ -732,7 +736,8 @@ async def live_debate(
                     0.0
                     if config.auth_kind == "oauth"
                     else estimate_cost(
-                        config.model, state.input_tokens, state.output_tokens
+                        config.model, state.input_tokens, state.output_tokens,
+                        provider=config.provider,
                     )
                 )
                 _cost_guard.finalize_reservation(

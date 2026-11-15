@@ -165,12 +165,15 @@ def test_write_session_from_events_lands_after_ttl_expiry(tmp_db, monkeypatch):
     spend_after, _ = cost_guard.get_state()
     assert spend_after.daily_usd >= spend_before.daily_usd + real_cost - 1e-9
 
-    # 6. finalize_reservation on the expired-and-swept row is a no-op (returns
-    #    False because finalized=1 already), but that no longer matters for
-    #    the ledger — the cost is already recorded in `sessions`.
+    # 6. finalize_reservation on the expired-and-swept row now records the
+    #    real cost (finalize keys on finalized_cost_usd IS NULL, which the
+    #    sweep leaves untouched, so an aborted long run is never lost). A
+    #    completed run finalizes with unrecorded=False, so the reservation's
+    #    cost is NOT added again: the `sessions` row already carries it.
     finalized = cost_guard.finalize_reservation(rid, actual_cost_usd=real_cost)
-    assert finalized is False  # already swept
+    assert finalized is True
+    assert cost_guard.finalize_reservation(rid, actual_cost_usd=real_cost) is False
 
-    # Spend must NOT double-count after the no-op finalize.
+    # Spend must NOT double-count after the finalize.
     spend_final, _ = cost_guard.get_state()
     assert spend_final.daily_usd == pytest.approx(spend_after.daily_usd)

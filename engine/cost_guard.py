@@ -23,22 +23,52 @@ Three new tables join the existing `sessions` schema:
    atomically reads current spend, computes a worst-case ceiling for the
    new session, decides allow/deny, and (on allow) inserts a reservation row.
 3. The reservation_id rides on the WS start frame.
-4. Inside `live_debate.py`'s try/finally, `finalize_reservation()` updates
-   the row with the actual cost and marks it finalized.
+4. Inside `live_debate.py`'s (or Pro's `full_debate.py`'s) try/finally,
+   `finalize_reservation()` updates the row with the actual cost and marks it
+   finalized.
+
+## What counts as spend
+
+`_compute_spend()` adds three things per window: completed sessions (the
+`sessions` table, written from `session.complete`), live reservations at
+their estimate, and finalized reservations flagged `unrecorded=1`. The last
+one exists because an ABORTED run (token cap, cost cap, node error, client
+disconnect) writes no session row, so without it the money it really spent
+would count toward no cap at all. A completed run is never flagged, so it is
+never counted twice.
+
+## Pro estimate and mid-run limit
+
+Trading Agents Lab Pro runs the real upstream LangGraph graph, whose LLM calls
+have no per-call max_tokens, so no pre-run number is a true maximum. The Pro
+estimate (`pro_reservation_estimate`) is therefore a calibrated "about 1.4x a
+typical run" figure, and the real protection is a mid-run stop: at reserve
+time we store a USD limit on the reservation (`_run_limit`), and the Pro
+token meter halts the graph before a call that could cross it:
+
+- Normal run: the limit is the smallest headroom left under any enabled USD
+  cap. A run that overshoots its estimate but stays under the cap finishes.
+- Override run, Cost Guard disabled, or no USD cap enabled: a runaway stop at
+  `RUNAWAY_MULTIPLIER` (3x) the run's estimate.
+- OAuth / local: no USD limit (they cost $0); the optional token cap applies.
 
 ## TTL & crash recovery
 
-Reservations have a 15-minute TTL. If the engine is killed mid-debate, the
-reservation stays as `finalized=0` until either:
+Reservations have a TTL: 15 minutes for the simplified debate
+(`RESERVATION_TTL_SECONDS`) and 60 minutes for a Pro full-graph run
+(`PRO_RESERVATION_TTL_SECONDS`; a default Pro run took 6 to 11 minutes in
+testing, and extra debate rounds stretch that). If the engine is killed
+mid-debate, the reservation stays as `finalized=0` until either:
 
 - The next `reserve()` call sweeps it (every reserve runs `_sweep_expired()`)
 - The startup sweep runs it (called from `initialize()`)
 
 Until swept, an expired reservation is filtered out of spend aggregation by
 the `expires_at > now` clause in `_compute_spend()` — so a hard crash
-doesn't permanently inflate apparent spend. 15 min is long enough for the
-slowest realistic Anthropic debate, short enough that the user isn't
-blocked on a stale reservation.
+doesn't permanently inflate apparent spend; at worst a crashed Pro run holds
+its estimate for an hour. A run that outlives its TTL is still finalized
+with its real cost: finalize keys on `finalized_cost_usd IS NULL`, which a
+sweep leaves untouched.
 
 ## OAuth policy
 
@@ -62,7 +92,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal, Optional
 
-from .llm_providers import _COST_PER_M_TOKENS
+from .llm_providers import (
+    anthropic_thinks_by_default,
+    gemini_thinks_by_default,
+    infer_provider,
+    openai_is_classic_chat_model,
+    openai_reasoning_effort,
+    openrouter_is_reasoning_model,
+    per_token_rates,
+)
 from .live_debate import MAX_AGENTS_PER_SESSION
 
 
@@ -77,9 +115,9 @@ _SCHEMA_DDL = """
 CREATE TABLE IF NOT EXISTS cost_guard_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     enabled INTEGER NOT NULL DEFAULT 1,
-    cap_daily_usd REAL NOT NULL DEFAULT 1.00,
-    cap_weekly_usd REAL NOT NULL DEFAULT 5.00,
-    cap_monthly_usd REAL NOT NULL DEFAULT 15.00,
+    cap_daily_usd REAL NOT NULL DEFAULT 5.00,
+    cap_weekly_usd REAL NOT NULL DEFAULT 15.00,
+    cap_monthly_usd REAL NOT NULL DEFAULT 45.00,
     cap_sessions_per_day INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
@@ -92,7 +130,11 @@ CREATE TABLE IF NOT EXISTS cost_reservations (
     auth_kind TEXT NOT NULL,
     override INTEGER NOT NULL DEFAULT 0,
     finalized INTEGER NOT NULL DEFAULT 0,
-    finalized_cost_usd REAL
+    finalized_cost_usd REAL,
+    unrecorded INTEGER NOT NULL DEFAULT 0,
+    usd_limit REAL,
+    limit_reason TEXT,
+    limit_dimension TEXT
 );
 
 CREATE INDEX IF NOT EXISTS cost_reservations_finalized_idx
@@ -103,14 +145,39 @@ _SEED_CONFIG_SQL = """
 INSERT OR IGNORE INTO cost_guard_config (
     id, enabled, cap_daily_usd, cap_weekly_usd, cap_monthly_usd,
     cap_sessions_per_day, updated_at
-) VALUES (1, 1, 1.00, 5.00, 15.00, 0, ?);
+) VALUES (1, 1, 5.00, 15.00, 45.00, 0, ?);
 """
+# Pro defaults ($5 / $15 / $45) set 2026-11-14 (founder decision): one default
+# Pro run on Claude Sonnet 4.6 really cost $0.93, so the old $1 daily cap
+# could not fit even one run. INSERT OR IGNORE means this only seeds NEW
+# databases; existing users keep the caps they already have.
+
+# Columns added to cost_reservations after the first release. CREATE TABLE IF
+# NOT EXISTS never alters an existing table, so `initialize()` adds any that
+# are missing (additive and nullable or defaulted, so old rows stay valid).
+_RESERVATION_ADDED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("unrecorded", "INTEGER NOT NULL DEFAULT 0"),
+    ("usd_limit", "REAL"),
+    ("limit_reason", "TEXT"),
+    ("limit_dimension", "TEXT"),
+)
 
 
 # Reservations expire after this many seconds. Slowest realistic Anthropic
 # Claude debate is ~6 min; 15 min covers it with headroom and recovers
 # quickly from a hard crash.
 RESERVATION_TTL_SECONDS = 15 * 60
+
+# Pro full-graph runs measured 6 to 11 minutes at the default config, and
+# extra debate/risk rounds and slow reasoning models stretch that. 60 minutes
+# keeps the reservation counting for the whole run while a crashed run still
+# frees its slot within the hour.
+PRO_RESERVATION_TTL_SECONDS = 60 * 60
+
+# Override runs (and runs with no enabled USD cap) get no cap-based stop, but
+# a run that costs this many times its own estimate is almost certainly a
+# runaway (a tool loop, a model that never stops thinking) and is ended.
+RUNAWAY_MULTIPLIER = 3.0
 
 
 # ---- Dataclasses ------------------------------------------------------------
@@ -153,6 +220,21 @@ class ReserveResult:
     expires_at: str
     auth_kind: str
     override: bool
+    # Mid-run USD limit stored on the reservation (see `_run_limit`). None
+    # for OAuth/local runs, which cost $0.
+    usd_limit: Optional[float] = None
+    limit_reason: Optional[str] = None  # "cap" | "runaway" | None
+    limit_dimension: Optional[str] = None  # "daily" | "weekly" | "monthly" | None
+
+
+@dataclass
+class RunLimit:
+    """The USD limit a run must not cross, read back by the Pro engine."""
+
+    limit_usd: float
+    reason: str  # "cap" (an enabled USD cap) or "runaway" (3x the estimate)
+    dimension: Optional[str]  # which cap set the limit, for the message
+    est_cost_usd: float
 
 
 # ---- Window math ------------------------------------------------------------
@@ -191,7 +273,7 @@ def _window_start(window: _WindowName, *, now: Optional[datetime] = None) -> str
     return _iso(start)
 
 
-# ---- Worst-case reservation -------------------------------------------------
+# ---- Worst-case reservation (simplified debate) -----------------------------
 
 
 def worst_case_reservation(
@@ -199,26 +281,25 @@ def worst_case_reservation(
     model: str,
     auth_kind: str,
     max_tokens: int,
+    provider: Optional[str] = None,
 ) -> float:
-    """Conservative upper-bound USD estimate for a single live debate.
+    """Conservative upper-bound USD estimate for a single SIMPLIFIED debate
+    (``live_debate.py``: the Telegram bot and any caller without ``pro``).
 
-    OAuth sessions always return 0.0 — they bill via subscription, not
-    per-token. Unknown models (e.g. OpenRouter passthrough) also return
-    0.0 so the cost cap doesn't block what we can't price; the rate cap
-    can still be set if the user wants quota discipline there.
+    OAuth and local sessions always return 0.0: OAuth bills via the ChatGPT
+    subscription, local runs on the user's machine.
 
-    For known per-token models: assumes all 12 agents max out their output
-    cap (the expensive direction) AND the input transcript grows
-    triangularly across agents (later agents see all prior turns).
+    Every per-token model is priced through ``per_token_rates``, so a model
+    with no table row gets a family ceiling (or the top ceiling), never $0.
+    Pass ``provider`` when known; otherwise it is inferred from the model id.
+
+    Assumes all 12 agents max out their output cap (the expensive direction)
+    AND the input transcript grows triangularly across agents (later agents
+    see all prior turns).
     """
-    # OAuth (subscription) and local LLM runs are both effectively $0 from
-    # the engine's perspective — OAuth bills via the user's ChatGPT plan,
-    # local runs entirely on the user's machine. Skip the USD math.
     if auth_kind in ("oauth", "local"):
         return 0.0
-    rates = _COST_PER_M_TOKENS.get(model)
-    if rates is None:
-        return 0.0
+    rates = per_token_rates(model, provider)
     n = MAX_AGENTS_PER_SESSION
     # Output: every agent maxes its budget. (Worst case.)
     max_out_tokens = n * max_tokens
@@ -228,6 +309,287 @@ def worst_case_reservation(
     growth_input_tokens = (n * (n - 1) // 2) * max_tokens
     max_in_tokens = n * fixed_input_per_agent + growth_input_tokens
     return (max_in_tokens * rates["input"] + max_out_tokens * rates["output"]) / 1_000_000
+
+
+# ---- Pro full-graph estimate ------------------------------------------------
+#
+# Why a calibrated estimate instead of a worst case: Pro runs the real upstream
+# LangGraph graph, whose LLM clients get no per-call max_tokens, and whose
+# analysts loop over tools an unknown number of times. No pre-run number is a
+# true maximum, so a "worst case" would just be a bigger guess. The founder's
+# rule (2026-11-14) is a pre-run estimate of about 1.4x a TYPICAL run, backed
+# by a mid-run stop at the cap (see `_run_limit` and full_debate's meter).
+#
+# Calibration: a real default Pro run (4 analysts, 1 debate round, 1 risk
+# round, deep = quick = claude-sonnet-4-6) used 164,419 input / 28,564 output
+# tokens. Per node (input, output): market 19.8K/4.2K, social 4.3K/2.5K,
+# news 13.0K/3.3K, fundamentals 26.4K/5.5K, bull 13.2K/1.8K, bear 16.9K/2.6K,
+# research manager 5.6K/1.4K, trader 5.7K/0.5K, aggressive 13.8K/1.4K,
+# conservative 16.6K/2.1K, neutral 20.8K/1.8K, portfolio manager 8.4K/1.4K.
+# The constants below are fitted to that run ("raw" tokens), then everything
+# is scaled by PRO_ESTIMATE_FACTOR.
+
+PRO_ESTIMATE_FACTOR = 1.4
+
+# Reasoning ("thinking") models bill hidden thinking tokens as output, and the
+# upstream graph does not cap thinking. 2.5x the visible output is our budget
+# for that: it sits between "thinks a little" and the Lite app's own per-call
+# allowance (up to 1200 thinking tokens on a 400-token answer, i.e. 4x). It
+# scales BILLED output only; thinking text is not carried into later prompts,
+# so it does not grow the downstream context.
+PRO_REASONING_OUTPUT_FACTOR = 2.5
+
+PRO_ALL_ANALYSTS: tuple[str, ...] = ("market", "social", "news", "fundamentals")
+
+# Per analyst, raw (input, output, report). Analysts run independently (the
+# graph clears messages between them), so their inputs do not stack; "report"
+# is the part of the output that later nodes read as context. Caveat: the
+# reference run had no Alpaca market data and no Alpha Vantage key, so the
+# data-driven analysts (social especially, 4.3K/2.5K) may run heavier with
+# full data; the 1.4x factor and the mid-run cap stop absorb that.
+_PRO_ANALYST_RAW: dict[str, tuple[int, int, int]] = {
+    "market": (19_800, 4_200, 2_500),
+    "social": (4_300, 2_500, 1_800),
+    "news": (13_000, 3_300, 2_200),
+    "fundamentals": (26_400, 5_500, 2_500),
+}
+
+# Downstream nodes, raw. "Overhead" is each prompt's fixed text plus the
+# cross-run memory; "turn" is one speaker's output in a debate loop. The
+# bull/bear and risk prompts also carry every analyst report (added below).
+_PRO_DEBATE_OVERHEAD = 4_900   # bull / bear prompt
+_PRO_DEBATE_TURN_OUT = 2_220
+_PRO_RM_OVERHEAD = 1_200       # research manager (deep): reads the debate
+_PRO_RM_OUT = 1_410
+_PRO_TRADER_OVERHEAD = 4_300   # trader: reads the research manager's plan
+_PRO_TRADER_OUT = 500
+_PRO_RISK_OVERHEAD = 5_775     # risk analysts: prompt plus the trader plan
+_PRO_RISK_TURN_OUT = 1_765
+_PRO_PM_OVERHEAD = 2_600       # portfolio manager (deep): reads risk debate
+_PRO_PM_OUT = 1_430
+# full_debate's post-graph thesis-scoring call (quick model): three clipped
+# 4,000-character excerpts (~3K tokens) plus its prompt; a three-line answer.
+_PRO_SCORE_IN = 3_500
+_PRO_SCORE_OUT = 100
+
+
+@dataclass
+class NodeBudget:
+    """Estimated tokens for one LLM node of a Pro run (already scaled)."""
+
+    node: str
+    tier: str  # "quick" | "deep": which configured model runs this node
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass
+class ProEstimateInputs:
+    """Normalized Pro run shape. Built by `normalize_pro_fields` so the
+    /cost-guard endpoints and the WS auto-reserve read a pro config the same
+    way (and the same way server._build_pro_library_config does)."""
+
+    deep_model: str
+    quick_model: str
+    selected_analysts: list[str]
+    max_debate_rounds: int
+    max_risk_discuss_rounds: int
+
+
+def _int_rounds(value: Any) -> int:
+    # Same coercion as server._build_pro_library_config: int(x or 1), floor 1.
+    try:
+        return max(1, int(value or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def normalize_pro_fields(raw: Optional[dict], *, fallback_model: str = "") -> ProEstimateInputs:
+    """Read a renderer `pro` / `pro_config` dict into estimator inputs.
+
+    Mirrors server._build_pro_library_config: deep falls back to the run's
+    primary model, quick falls back to the primary model and then to deep,
+    rounds are int(x or 1). Analysts are filtered to the four known ids;
+    missing or empty means all four (full_debate's own default).
+    """
+    raw = raw if isinstance(raw, dict) else {}
+    deep = str(raw.get("deep_think_llm") or fallback_model or "").strip()
+    quick = str(raw.get("quick_think_llm") or fallback_model or deep).strip()
+    picked = raw.get("selected_analysts")
+    analysts: list[str] = []
+    if isinstance(picked, (list, tuple)):
+        for a in picked:
+            a = str(a).strip().lower()
+            if a in PRO_ALL_ANALYSTS and a not in analysts:
+                analysts.append(a)
+    if not analysts:
+        analysts = list(PRO_ALL_ANALYSTS)
+    return ProEstimateInputs(
+        deep_model=deep,
+        quick_model=quick or deep,
+        selected_analysts=analysts,
+        max_debate_rounds=_int_rounds(raw.get("max_debate_rounds", 1)),
+        max_risk_discuss_rounds=_int_rounds(raw.get("max_risk_discuss_rounds", 1)),
+    )
+
+
+def pro_node_budgets(
+    *,
+    selected_analysts: Optional[list[str]] = None,
+    max_debate_rounds: int = 1,
+    max_risk_discuss_rounds: int = 1,
+) -> list[NodeBudget]:
+    """Per-node token budgets for a Pro run, scaled by PRO_ESTIMATE_FACTOR.
+
+    Node-to-model mapping follows tradingagents/graph/setup.py: the research
+    manager and portfolio manager use the DEEP model; every analyst, both
+    researchers, the trader, the three risk analysts, and our thesis-scoring
+    call use the QUICK model.
+
+    Context growth: in the bull/bear loop each turn reads every earlier turn,
+    so turn i (0-based) carries i prior outputs; same for the aggressive /
+    conservative / neutral loop. Total input therefore grows faster than the
+    number of rounds (triangular), as it does in the real graph.
+    """
+    analysts = [a for a in (selected_analysts or PRO_ALL_ANALYSTS) if a in _PRO_ANALYST_RAW]
+    if not analysts:
+        analysts = list(PRO_ALL_ANALYSTS)
+    d_turns = 2 * max(1, int(max_debate_rounds))
+    r_turns = 3 * max(1, int(max_risk_discuss_rounds))
+    raw: list[tuple[str, str, int, int]] = []
+
+    reports = 0
+    for a in analysts:
+        a_in, a_out, a_report = _PRO_ANALYST_RAW[a]
+        raw.append((f"{a}_analyst", "quick", a_in, a_out))
+        reports += a_report
+
+    speakers = ("bull_researcher", "bear_researcher")
+    for i in range(d_turns):
+        raw.append((speakers[i % 2], "quick",
+                    _PRO_DEBATE_OVERHEAD + reports + i * _PRO_DEBATE_TURN_OUT,
+                    _PRO_DEBATE_TURN_OUT))
+    raw.append(("research_manager", "deep",
+                _PRO_RM_OVERHEAD + d_turns * _PRO_DEBATE_TURN_OUT, _PRO_RM_OUT))
+    raw.append(("trader", "quick", _PRO_TRADER_OVERHEAD + _PRO_RM_OUT, _PRO_TRADER_OUT))
+
+    risk = ("risk_aggressive", "risk_conservative", "risk_neutral")
+    for j in range(r_turns):
+        raw.append((risk[j % 3], "quick",
+                    _PRO_RISK_OVERHEAD + reports + _PRO_TRADER_OUT + j * _PRO_RISK_TURN_OUT,
+                    _PRO_RISK_TURN_OUT))
+    raw.append(("portfolio_manager", "deep",
+                _PRO_PM_OVERHEAD + _PRO_TRADER_OUT + r_turns * _PRO_RISK_TURN_OUT,
+                _PRO_PM_OUT))
+    raw.append(("thesis_scoring", "quick", _PRO_SCORE_IN, _PRO_SCORE_OUT))
+
+    f = PRO_ESTIMATE_FACTOR
+    return [
+        NodeBudget(node=n, tier=t, input_tokens=round(i * f), output_tokens=round(o * f))
+        for (n, t, i, o) in raw
+    ]
+
+
+def pro_model_reasons(model: str, provider: Optional[str] = None) -> bool:
+    """Whether a model spends billed thinking tokens on the upstream graph.
+
+    Differs from the Lite app's `thinking_allowance` on OpenAI: Lite sends
+    reasoning_effort "none" to gpt-5.1+, so they do not think there. Pro's
+    upstream clients send no effort unless the user set one, so every OpenAI
+    model that accepts reasoning_effort (gpt-5 line, o-series, -pro) is
+    treated as thinking. MiniMax M2.x always thinks (its <think> text bills
+    as output). Unknown providers: False.
+    """
+    m = (model or "").strip().lower()
+    p = provider or infer_provider(model)
+
+    def openai_thinks(name: str) -> bool:
+        if openai_is_classic_chat_model(name):
+            return False
+        return "-pro" in name or openai_reasoning_effort(name) is not None
+
+    if p == "openai":
+        return openai_thinks(m)
+    if p == "openrouter":
+        vendor, _, name = m.partition("/")
+        if vendor == "openai":
+            return openai_thinks(name.split(":", 1)[0])
+        return openrouter_is_reasoning_model(model)
+    if p == "anthropic":
+        return anthropic_thinks_by_default(model)
+    if p in ("gemini", "google"):
+        return gemini_thinks_by_default(model)
+    if p == "xai":
+        return "reasoning" in m and "non-reasoning" not in m
+    if p == "minimax":
+        return True
+    return False
+
+
+def pro_reservation_estimate(
+    *,
+    deep_model: str,
+    quick_model: str,
+    auth_kind: str,
+    provider: Optional[str] = None,
+    selected_analysts: Optional[list[str]] = None,
+    max_debate_rounds: int = 1,
+    max_risk_discuss_rounds: int = 1,
+) -> float:
+    """Pre-run USD estimate for a Pro full-graph run (about 1.4x typical).
+
+    Each node is priced at ITS model's rates (deep vs quick), resolved through
+    `per_token_rates` so an unknown model gets a family ceiling, never $0.
+    OAuth (ChatGPT subscription) and local runs return 0.0.
+    """
+    if auth_kind in ("oauth", "local"):
+        return 0.0
+    quick = quick_model or deep_model
+    deep = deep_model or quick
+    total = 0.0
+    for b in pro_node_budgets(
+        selected_analysts=selected_analysts,
+        max_debate_rounds=max_debate_rounds,
+        max_risk_discuss_rounds=max_risk_discuss_rounds,
+    ):
+        model = deep if b.tier == "deep" else quick
+        rates = per_token_rates(model, provider)
+        out_tokens: float = b.output_tokens
+        if pro_model_reasons(model, provider):
+            out_tokens *= PRO_REASONING_OUTPUT_FACTOR
+        total += (b.input_tokens * rates["input"] + out_tokens * rates["output"]) / 1_000_000
+    return total
+
+
+def estimate_for_request(
+    *,
+    model: str,
+    auth_kind: str,
+    max_tokens: int,
+    provider: Optional[str] = None,
+    pro: Optional[dict] = None,
+) -> float:
+    """The ONE place a reserve/check request becomes a dollar estimate.
+
+    Both /cost-guard endpoints and the WS auto-reserve go through reserve() /
+    check(), which call this, so the same config always gives the same number.
+    With a `pro` dict: the Pro full-graph estimator. Without: the
+    simplified-debate worst case.
+    """
+    if pro is not None:
+        inp = normalize_pro_fields(pro, fallback_model=model)
+        return pro_reservation_estimate(
+            deep_model=inp.deep_model,
+            quick_model=inp.quick_model,
+            auth_kind=auth_kind,
+            provider=provider,
+            selected_analysts=inp.selected_analysts,
+            max_debate_rounds=inp.max_debate_rounds,
+            max_risk_discuss_rounds=inp.max_risk_discuss_rounds,
+        )
+    return worst_case_reservation(
+        model=model, auth_kind=auth_kind, max_tokens=max_tokens, provider=provider
+    )
 
 
 # ---- DB plumbing (delegates to storage._connect via a path lookup) --------
@@ -302,6 +664,7 @@ def initialize() -> None:
     _db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect() as conn:
         conn.executescript(_SCHEMA_DDL)
+        _add_missing_reservation_columns(conn)
         conn.execute(_SEED_CONFIG_SQL, (_iso(_utcnow()),))
         # Sweep any reservations that expired while the engine was down.
         _sweep_expired_reservations(conn)
@@ -372,15 +735,20 @@ def check(
     model: str,
     auth_kind: str,
     max_tokens: int,
+    provider: Optional[str] = None,
+    pro: Optional[dict] = None,
 ) -> CheckResult:
     """Non-mutating preview: would this session be allowed under current caps?
 
-    Computes worst-case cost, reads current spend, returns allow/deny. Does
-    NOT create a reservation. Safe for "preview" UI calls.
+    Computes the estimate (Pro full-graph estimate when `pro` is given, the
+    simplified-debate worst case otherwise), reads current spend, returns
+    allow/deny. Does NOT create a reservation. Safe for "preview" UI calls.
     """
     initialize()
     config = get_config()
-    est = worst_case_reservation(model=model, auth_kind=auth_kind, max_tokens=max_tokens)
+    est = estimate_for_request(
+        model=model, auth_kind=auth_kind, max_tokens=max_tokens, provider=provider, pro=pro
+    )
     with _connect() as conn:
         _sweep_expired_reservations(conn)
         spend = _compute_spend(conn)
@@ -411,19 +779,27 @@ def reserve(
     auth_kind: str,
     max_tokens: int,
     override: bool = False,
+    provider: Optional[str] = None,
+    pro: Optional[dict] = None,
 ) -> ReserveResult:
     """Atomically check-and-insert a reservation row.
 
     Raises CostGuardBlocked if the caps would be exceeded and override=False.
     On success, the reservation_id must accompany the WS start frame and be
     finalized via `finalize_reservation()` when the debate ends.
+
+    With `pro` (a Pro full-graph run): the Pro estimate, the 60-minute TTL,
+    and a mid-run USD limit stored on the row for `run_usd_limit()`.
     """
     initialize()
     config = get_config()
-    est = worst_case_reservation(model=model, auth_kind=auth_kind, max_tokens=max_tokens)
+    est = estimate_for_request(
+        model=model, auth_kind=auth_kind, max_tokens=max_tokens, provider=provider, pro=pro
+    )
     rid = _new_reservation_id()
     now = _utcnow()
-    expires = now + timedelta(seconds=RESERVATION_TTL_SECONDS)
+    ttl = PRO_RESERVATION_TTL_SECONDS if pro is not None else RESERVATION_TTL_SECONDS
+    expires = now + timedelta(seconds=ttl)
     with _connect() as conn:
         # Single transaction: sweep, check, insert.
         _sweep_expired_reservations(conn)
@@ -438,14 +814,21 @@ def reserve(
                     config=config,
                     est_cost=est,
                 )
+        # `spend` was read BEFORE this row exists, so it is exactly "spend plus
+        # other live reservations", which is what the headroom rule needs.
+        limit, reason, dimension = _run_limit(
+            spend=spend, config=config, est_cost=est, auth_kind=auth_kind, override=override
+        )
         conn.execute(
             """
             INSERT INTO cost_reservations (
                 id, created_at, expires_at, est_cost_usd, auth_kind,
-                override, finalized, finalized_cost_usd
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL)
+                override, finalized, finalized_cost_usd,
+                usd_limit, limit_reason, limit_dimension
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
             """,
-            (rid, _iso(now), _iso(expires), est, auth_kind, 1 if override else 0),
+            (rid, _iso(now), _iso(expires), est, auth_kind, 1 if override else 0,
+             limit, reason, dimension),
         )
         conn.commit()
     return ReserveResult(
@@ -454,15 +837,64 @@ def reserve(
         expires_at=_iso(expires),
         auth_kind=auth_kind,
         override=override,
+        usd_limit=limit,
+        limit_reason=reason,
+        limit_dimension=dimension,
     )
 
 
-def finalize_reservation(reservation_id: str, *, actual_cost_usd: float) -> bool:
+def run_usd_limit(reservation_id: Optional[str]) -> Optional[RunLimit]:
+    """The mid-run USD limit stored on a reservation, or None for no USD stop.
+
+    None when: no reservation id, an unknown id, or an OAuth/local run (they
+    cost $0; only the optional token cap applies). Best-effort: a DB error
+    also returns None, and the pre-run reservation still stands.
+    """
+    if not reservation_id:
+        return None
+    try:
+        initialize()
+        with _connect() as conn:
+            row = conn.execute(
+                "SELECT est_cost_usd, usd_limit, limit_reason, limit_dimension "
+                "FROM cost_reservations WHERE id = ?",
+                (reservation_id,),
+            ).fetchone()
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(
+            f"[cost_guard] run_usd_limit failed for {reservation_id}: "
+            f"{type(exc).__name__}: {exc}\n"
+        )
+        return None
+    if row is None or row["usd_limit"] is None:
+        return None
+    return RunLimit(
+        limit_usd=float(row["usd_limit"]),
+        reason=str(row["limit_reason"] or "runaway"),
+        dimension=row["limit_dimension"],
+        est_cost_usd=float(row["est_cost_usd"]),
+    )
+
+
+def finalize_reservation(
+    reservation_id: str,
+    *,
+    actual_cost_usd: float,
+    unrecorded: bool = False,
+) -> bool:
     """Mark a reservation as finalized with the real cost.
 
-    Idempotent — calling twice is fine. Returns True if a row was updated,
-    False if the reservation_id was unknown (which is logged but not raised
-    so live_debate's finally block is robust to weird states).
+    `unrecorded=True` means "no session row will carry this cost" (an aborted
+    run: token cap, cost cap, node error, disconnect). The finalized cost then
+    counts toward the caps by itself (see `_compute_spend`). A completed run
+    passes False because its `sessions` row already carries the cost.
+
+    Idempotent: only a row whose cost is still unset is updated, so a second
+    call is a no-op. That condition (rather than `finalized = 0`) also lets a
+    run that outlived its TTL, and was swept to finalized with no cost, still
+    record what it really spent. Returns True if a row was updated, False if
+    the reservation_id was unknown or already settled (logged, not raised, so
+    the debate's finally block is robust to weird states).
     """
     if not reservation_id:
         return False
@@ -472,10 +904,10 @@ def finalize_reservation(reservation_id: str, *, actual_cost_usd: float) -> bool
             cur = conn.execute(
                 """
                 UPDATE cost_reservations
-                SET finalized = 1, finalized_cost_usd = ?
-                WHERE id = ? AND finalized = 0
+                SET finalized = 1, finalized_cost_usd = ?, unrecorded = ?
+                WHERE id = ? AND finalized_cost_usd IS NULL
                 """,
-                (max(0.0, float(actual_cost_usd)), reservation_id),
+                (max(0.0, float(actual_cost_usd)), 1 if unrecorded else 0, reservation_id),
             )
             conn.commit()
             return cur.rowcount > 0
@@ -488,6 +920,49 @@ def finalize_reservation(reservation_id: str, *, actual_cost_usd: float) -> bool
 
 
 # ---- Internals --------------------------------------------------------------
+
+
+def _add_missing_reservation_columns(conn: sqlite3.Connection) -> None:
+    """Additive migration for databases created before these columns existed."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(cost_reservations)").fetchall()}
+    for name, decl in _RESERVATION_ADDED_COLUMNS:
+        if name not in have:
+            conn.execute(f"ALTER TABLE cost_reservations ADD COLUMN {name} {decl}")
+
+
+def _run_limit(
+    *,
+    spend: SpendState,
+    config: CostGuardConfig,
+    est_cost: float,
+    auth_kind: str,
+    override: bool,
+) -> tuple[Optional[float], Optional[str], Optional[str]]:
+    """(limit_usd, reason, dimension) for a new reservation (founder rule,
+    2026-11-14). `spend` must EXCLUDE this reservation.
+
+    - OAuth / local: (None, None, None). They cost $0; no USD stop.
+    - Normal run: the smallest headroom across enabled USD caps, where
+      headroom = cap - (spend + other live reservations). Equivalently
+      cap - total_including_this_reservation + this_estimate. The run is
+      stopped only if continuing would push spend past a cap; overshooting
+      its own estimate while under the cap is fine.
+    - Override run, Cost Guard disabled, or no USD cap enabled: no cap stop,
+      but a runaway stop at RUNAWAY_MULTIPLIER x the estimate.
+    """
+    if auth_kind in ("oauth", "local"):
+        return None, None, None
+    if config.enabled and not override:
+        candidates = [
+            (config.cap_daily_usd - spend.daily_usd, "daily", config.cap_daily_usd),
+            (config.cap_weekly_usd - spend.weekly_usd, "weekly", config.cap_weekly_usd),
+            (config.cap_monthly_usd - spend.monthly_usd, "monthly", config.cap_monthly_usd),
+        ]
+        enabled = [(h, d) for (h, d, cap) in candidates if cap > 0]
+        if enabled:
+            headroom, dimension = min(enabled, key=lambda x: x[0])
+            return max(0.0, headroom), "cap", dimension
+    return est_cost * RUNAWAY_MULTIPLIER, "runaway", None
 
 
 def _row_to_config(row: sqlite3.Row) -> CostGuardConfig:
@@ -515,7 +990,8 @@ def _sweep_expired_reservations(conn: sqlite3.Connection) -> int:
 
 
 def _compute_spend(conn: sqlite3.Connection) -> SpendState:
-    """Aggregate completed-session cost + active-reservation cost per window.
+    """Aggregate completed-session cost + active-reservation cost + the real
+    cost of aborted runs (finalized with `unrecorded=1`) per window.
 
     OAuth sessions are excluded from the cost sums (they're $0). Session
     counts include all live sessions regardless of auth_kind so the rate
@@ -557,6 +1033,27 @@ def _compute_spend(conn: sqlite3.Connection) -> SpendState:
         ).fetchone()
         return float(row[0])
 
+    def aborted_cost(since: str) -> float:
+        # Aborted runs write no sessions row, so their real (partial) cost
+        # lives only on the finalized reservation. Without this sum a run
+        # stopped by a cap, an error or a disconnect would be free.
+        row = conn.execute(
+            """
+            SELECT COALESCE(SUM(finalized_cost_usd), 0)
+            FROM cost_reservations
+            WHERE finalized = 1
+              AND unrecorded = 1
+              AND finalized_cost_usd IS NOT NULL
+              AND auth_kind = 'api_key'
+              AND created_at >= ?
+            """,
+            (since,),
+        ).fetchone()
+        return float(row[0])
+
+    def usd(since: str) -> float:
+        return round(cost_sum(since) + reserved_cost(since) + aborted_cost(since), 6)
+
     def session_count(since: str) -> int:
         row = conn.execute(
             "SELECT COUNT(*) FROM sessions WHERE live = 1 AND created_at >= ?",
@@ -575,9 +1072,9 @@ def _compute_spend(conn: sqlite3.Connection) -> SpendState:
         return int(row[0])
 
     return SpendState(
-        daily_usd=round(cost_sum(day_start) + reserved_cost(day_start), 6),
-        weekly_usd=round(cost_sum(week_start) + reserved_cost(week_start), 6),
-        monthly_usd=round(cost_sum(month_start) + reserved_cost(month_start), 6),
+        daily_usd=usd(day_start),
+        weekly_usd=usd(week_start),
+        monthly_usd=usd(month_start),
         sessions_today=session_count(day_start) + reserved_count(day_start),
     )
 
@@ -661,6 +1158,9 @@ def reserve_result_to_dict(r: ReserveResult) -> dict[str, Any]:
         "expires_at": r.expires_at,
         "auth_kind": r.auth_kind,
         "override": r.override,
+        "usd_limit": None if r.usd_limit is None else round(r.usd_limit, 6),
+        "limit_reason": r.limit_reason,
+        "limit_dimension": r.limit_dimension,
     }
 
 
@@ -670,7 +1170,14 @@ __all__ = [
     "SpendState",
     "CheckResult",
     "ReserveResult",
+    "RunLimit",
+    "NodeBudget",
+    "ProEstimateInputs",
     "RESERVATION_TTL_SECONDS",
+    "PRO_RESERVATION_TTL_SECONDS",
+    "RUNAWAY_MULTIPLIER",
+    "PRO_ESTIMATE_FACTOR",
+    "PRO_REASONING_OUTPUT_FACTOR",
     "initialize",
     "get_config",
     "update_config",
@@ -678,7 +1185,13 @@ __all__ = [
     "check",
     "reserve",
     "finalize_reservation",
+    "run_usd_limit",
     "worst_case_reservation",
+    "pro_reservation_estimate",
+    "pro_node_budgets",
+    "pro_model_reasons",
+    "normalize_pro_fields",
+    "estimate_for_request",
     "config_to_dict",
     "spend_to_dict",
     "check_result_to_dict",
