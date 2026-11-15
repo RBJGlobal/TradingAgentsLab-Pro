@@ -662,7 +662,7 @@ async def full_debate(
     completed = False
     free = auth_kind in ("oauth", "local")
 
-    def _refresh_limit() -> None:
+    async def _refresh_limit() -> None:
         """After each node: tell Cost Guard what this run has really used and
         pick up the current cap headroom (another run may have started or
         finished meanwhile). See cost_guard.refresh_run_limit."""
@@ -671,7 +671,10 @@ async def full_debate(
         try:
             from . import cost_guard as _cg
 
-            fresh = _cg.refresh_run_limit(
+            # SQLite is synchronous; run it off the event loop so the
+            # WebSocket keeps streaming while the database is busy.
+            fresh = await asyncio.to_thread(
+                _cg.refresh_run_limit,
                 reservation_id,
                 spent_usd=meter.spent_usd,
                 next_call_usd=meter.max_call_usd,
@@ -685,7 +688,6 @@ async def full_debate(
             meter.usd_limit = min(meter.usd_limit, fresh)
 
     def _cost_event() -> Dict[str, Any]:
-        _refresh_limit()
         return {
             "type": "cost.usage",
             "input_tokens": meter.input_tokens,
@@ -890,6 +892,7 @@ async def full_debate(
                     if rnd is not None:
                         event["round"] = rnd
                     yield event
+                    await _refresh_limit()
                     yield _cost_event()
 
         except TokenCapExceeded as exc:
