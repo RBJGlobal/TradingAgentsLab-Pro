@@ -271,18 +271,29 @@ function findDecisionMeta(events: DebateEvent[]): DecisionMeta {
 }
 
 /** Pro-only terminal states. A run can stop without a session.complete:
- * `run.token_cap` (budget stop, expected) or `run.error` (node failure).
- * The WS still closes cleanly on these, so DebateStream detects the event
- * to render a stopped/error notice in place of the decision card rather than
- * ending the transcript silently. Kind distinguishes the two so the copy and
- * styling read as "stopped" vs "failed". */
+ * `run.token_cap` or `run.cost_cap` (budget stops, expected) or `run.error`
+ * (node failure). The WS still closes cleanly on these, so DebateStream
+ * detects the event to render a stopped/error notice in place of the decision
+ * card rather than ending the transcript silently. Kind distinguishes them so
+ * the copy and styling read as "stopped" vs "failed". */
 interface TerminalState {
-  kind: 'token_cap' | 'error';
+  kind: 'token_cap' | 'cost_cap' | 'error';
   message: string;
 }
 
-function findTerminal(events: DebateEvent[]): TerminalState | null {
+export function findTerminal(events: DebateEvent[]): TerminalState | null {
   for (const ev of events) {
+    if (ev.type === 'run.cost_cap') {
+      // The engine writes the user-facing sentence (it knows which cap, and
+      // whether this was the override runaway stop); fall back to a plain
+      // line built from the numbers if an older engine sent none.
+      return {
+        kind: 'cost_cap',
+        message:
+          ev.message ||
+          `Stopped: This run reached a Cost Guard limit after spending $${ev.used_usd.toFixed(2)}.`,
+      };
+    }
     if (ev.type === 'run.token_cap') {
       return {
         kind: 'token_cap',
@@ -422,6 +433,25 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
             </div>
           )}
         </header>
+      )}
+
+      {/* A run that stopped early also gets a banner at the top, so the
+          reason is visible without scrolling to the notice at the end of
+          the transcript. Same message as the bottom notice. */}
+      {terminal && (
+        <div
+          className={`${styles.terminalBanner} ${
+            terminal.kind === 'error' ? styles.terminalBannerError : ''
+          }`}
+          role="alert"
+          data-testid="terminal-banner"
+          data-terminal={terminal.kind}
+        >
+          <span className={styles.terminalBannerLabel}>
+            {terminal.kind === 'error' ? 'Analysis failed' : 'Analysis stopped'}
+          </span>
+          <span>{terminal.message}</span>
+        </div>
       )}
 
       {summary && (
@@ -695,19 +725,21 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
       {terminal && (
         <div
           className={`${styles.decision} ${
-            terminal.kind === 'token_cap' ? styles.terminalStop : styles.terminalError
+            terminal.kind === 'error' ? styles.terminalError : styles.terminalStop
           }`}
           data-testid="terminal-notice"
           data-terminal={terminal.kind}
         >
           <div className={styles.decisionLabel}>
-            {terminal.kind === 'token_cap' ? 'Analysis stopped' : 'Analysis failed'}
+            {terminal.kind === 'error' ? 'Analysis failed' : 'Analysis stopped'}
           </div>
           <div className={styles.decisionReasoning}>{terminal.message}</div>
           <div className={styles.decisionDisclaimer}>
             {terminal.kind === 'token_cap'
               ? 'The token cap is a safety backstop. Raise it in Settings to allow a longer run.'
-              : 'No decision was produced. Check the engine logs or try again.'}
+              : terminal.kind === 'cost_cap'
+                ? 'What this run spent so far still counts toward your Cost Guard totals.'
+                : 'No decision was produced. Check the engine logs or try again.'}
           </div>
         </div>
       )}

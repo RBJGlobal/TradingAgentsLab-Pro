@@ -54,13 +54,14 @@ def test_worst_case_reservation_oauth_always_zero(tmp_db):
         assert est == 0.0
 
 
-def test_worst_case_reservation_unknown_model_zero(tmp_db):
-    """Unknown model (e.g. OpenRouter passthrough) returns zero — cost cap
-    can't block what we can't price; rate cap still applies."""
+def test_worst_case_reservation_unknown_model_gets_a_ceiling(tmp_db):
+    """Unknown model (e.g. an OpenRouter id from an unfamiliar vendor) is
+    priced at the top ceiling, never $0, so it can't walk past a USD cap.
+    12 agents x 400 tokens at 15/75: 33,600 in + 4,800 out = $0.864."""
     est = worst_case_reservation(
         model="some-router/exotic-model", auth_kind="api_key", max_tokens=400
     )
-    assert est == 0.0
+    assert est == pytest.approx(0.864)
 
 
 def test_worst_case_reservation_scales_with_max_tokens(tmp_db):
@@ -115,9 +116,10 @@ def test_initialize_seeds_default_config(tmp_db):
     initialize()
     config = get_config()
     assert config.enabled is True
-    assert config.cap_daily_usd == 1.00
-    assert config.cap_weekly_usd == 5.00
-    assert config.cap_monthly_usd == 15.00
+    # Pro defaults for new installs (founder decision 2026-11-14).
+    assert config.cap_daily_usd == 5.00
+    assert config.cap_weekly_usd == 15.00
+    assert config.cap_monthly_usd == 45.00
     assert config.cap_sessions_per_day == 0
 
 
@@ -134,8 +136,8 @@ def test_update_config_partial(tmp_db):
     new_config = update_config(cap_daily_usd=2.50)
     assert new_config.cap_daily_usd == 2.50
     # Untouched fields preserved
-    assert new_config.cap_weekly_usd == 5.00
-    assert new_config.cap_monthly_usd == 15.00
+    assert new_config.cap_weekly_usd == 15.00
+    assert new_config.cap_monthly_usd == 45.00
 
 
 def test_update_config_clamps_negative_to_zero(tmp_db):
@@ -236,7 +238,7 @@ def test_check_allows_on_fresh_db(tmp_db):
     assert result.allow is True
     assert result.over_dimension is None
     assert result.current.daily_usd == 0
-    assert result.config.cap_daily_usd == 1.00
+    assert result.config.cap_daily_usd == 5.00
 
 
 def test_check_oauth_returns_zero_estimate(tmp_db):

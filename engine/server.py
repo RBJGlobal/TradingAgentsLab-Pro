@@ -250,6 +250,8 @@ def build_app(*, token: str) -> FastAPI:
             model=req.model,
             auth_kind=req.auth_kind,
             max_tokens=req.max_tokens,
+            provider=req.provider,
+            pro=req.pro.model_dump() if req.pro is not None else None,
         )
         return cost_guard.check_result_to_dict(result)
 
@@ -427,6 +429,8 @@ def build_app(*, token: str) -> FastAPI:
                 auth_kind=req.auth_kind,
                 max_tokens=req.max_tokens,
                 override=req.override,
+                provider=req.provider,
+                pro=req.pro.model_dump() if req.pro is not None else None,
             )
         except cost_guard.CostGuardBlocked as exc:
             # 402 Payment Required — semantic match for "you can't afford
@@ -697,6 +701,14 @@ def build_app(*, token: str) -> FastAPI:
                     if is_pro
                     else config.model
                 )
+                # Pro: the same `pro` shape the renderer sends to
+                # /cost-guard/reserve, so cost_guard.estimate_for_request gives
+                # the same number for the same config on both paths.
+                reserve_pro = (
+                    _pro_reserve_fields(pro_lib_config or {}, pro_config_raw)
+                    if is_pro
+                    else None
+                )
 
                 # CostGuard auto-reserve when the renderer didn't pre-reserve.
                 # Older renderer versions don't send reservation_id; rather
@@ -711,6 +723,8 @@ def build_app(*, token: str) -> FastAPI:
                             auth_kind=config.auth_kind,
                             max_tokens=config.max_tokens,
                             override=False,
+                            provider=config.provider,
+                            pro=reserve_pro,
                         )
                         reservation_id = auto.reservation_id
                     except cost_guard.CostGuardBlocked as exc:
@@ -773,6 +787,32 @@ def build_app(*, token: str) -> FastAPI:
                     # / fundamentals analysts. Absent -> market-only (yfinance,
                     # free). Sent per-run (the engine persists no secrets).
                     av_key = start.get("alpha_vantage_key") or None
+                    # Mid-run USD stop, decided at reserve time and stored on
+                    # the reservation (cost_guard._run_limit): the cap headroom
+                    # for a normal run, 3x the estimate for an override run,
+                    # nothing for OAuth. None means the meter only counts.
+                    run_limit = cost_guard.run_usd_limit(reservation_id)
+                    if run_limit is None and config.auth_kind not in ("oauth", "local"):
+                        # Fail closed: a per-token run whose limit could not be
+                        # read (DB error, unknown or stale reservation id) still
+                        # gets the runaway stop at 3x a fresh estimate, instead
+                        # of running with no USD stop at all.
+                        try:
+                            fallback_est = cost_guard.estimate_for_request(
+                                model=reserve_model,
+                                auth_kind=config.auth_kind,
+                                max_tokens=config.max_tokens,
+                                provider=config.provider,
+                                pro=reserve_pro,
+                            )
+                            run_limit = cost_guard.RunLimit(
+                                limit_usd=fallback_est * cost_guard.RUNAWAY_MULTIPLIER,
+                                reason="runaway",
+                                dimension=None,
+                                est_cost_usd=fallback_est,
+                            )
+                        except Exception:  # noqa: BLE001
+                            run_limit = None
                     debate_events = full_debate(
                         ticker,
                         trade_date,
@@ -786,6 +826,10 @@ def build_app(*, token: str) -> FastAPI:
                         oauth_account_id=config.auth.get("account_id") or None,
                         reservation_id=reservation_id,
                         alpha_vantage_key=av_key,
+                        usd_limit=run_limit.limit_usd if run_limit else None,
+                        usd_limit_reason=run_limit.reason if run_limit else None,
+                        usd_limit_dimension=run_limit.dimension if run_limit else None,
+                        est_cost_usd=run_limit.est_cost_usd if run_limit else None,
                     )
                 else:
                     debate_events = live_debate(
@@ -801,10 +845,19 @@ def build_app(*, token: str) -> FastAPI:
                 # Each agent.message arrives as the LLM response completes — we
                 # throttle a little between events so the UI's transition
                 # animations are still visible.
-                async for event in debate_events:
-                    await ws.send_json(event)
-                    captured_events.append(event)
-                    await asyncio.sleep(0.15)
+                try:
+                    async for event in debate_events:
+                        await ws.send_json(event)
+                        captured_events.append(event)
+                        await asyncio.sleep(0.15)
+                finally:
+                    # When the user presses Stop, send_json raises
+                    # WebSocketDisconnect mid-loop. Close the generator NOW so
+                    # its finally block finalizes the reservation with the
+                    # real partial cost right away, instead of whenever the
+                    # abandoned generator happens to be garbage-collected.
+                    # A no-op after normal exhaustion.
+                    await debate_events.aclose()
             else:
                 # Stub debate path — same UX, deterministic content.
                 for event in canned_debate(
@@ -825,6 +878,12 @@ def build_app(*, token: str) -> FastAPI:
                 trade_date=trade_date,
                 events=captured_events,
             )
+            # A paid run whose History row could not be written has no
+            # sessions row to carry its cost, and its reservation was settled
+            # as recorded. Flag the reservation so the run still counts toward
+            # the caps. (No-op for stub runs, which have no reservation.)
+            if session_id is None and reservation_id:
+                cost_guard.mark_unrecorded(reservation_id)
 
             # Phase 8a — fire webhooks. After persist (so we have a session_id)
             # and before ws.close(1000) (so the renderer is still listening for
@@ -952,6 +1011,20 @@ def _summary_to_dict(summary: QuoteSummary) -> dict[str, Any]:
     }
 
 
+def _pro_reserve_fields(pro_lib: dict, pro_raw: dict) -> dict[str, Any]:
+    """The `pro` dict the WS auto-reserve hands cost_guard: the resolved
+    deep/quick models and round counts from the library config, plus the
+    analyst selection exactly as the renderer sent it (full_debate's default
+    of all four applies when it is absent, in the estimator too)."""
+    return {
+        "deep_think_llm": pro_lib.get("deep_think_llm"),
+        "quick_think_llm": pro_lib.get("quick_think_llm"),
+        "max_debate_rounds": pro_lib.get("max_debate_rounds", 1),
+        "max_risk_discuss_rounds": pro_lib.get("max_risk_discuss_rounds", 1),
+        "selected_analysts": pro_raw.get("selected_analysts") or None,
+    }
+
+
 def _build_pro_library_config(config: ProviderConfig, pro_raw: dict) -> dict[str, Any]:
     """Translate the renderer's provider_config + pro_config into the upstream
     library config dict that `full_debate` merges over DEFAULT_CONFIG.
@@ -1016,10 +1089,32 @@ class CostGuardCheckRequest(BaseModel):
     # downstream cost-guard logic in agreement.
     auth_kind: str = Field(pattern=r"^(api_key|oauth|local)$")
     max_tokens: int = Field(default=400, ge=1, le=8000)
+    # Optional provider id (anthropic, openai, openrouter, ...). Lets the
+    # pricing resolver pick the right family ceiling for a model it has no
+    # row for; inferred from the model id when absent.
+    provider: str | None = Field(default=None, max_length=40)
+    # Pro full-graph run shape. When present, the estimate is the Pro
+    # estimator's (cost_guard.pro_reservation_estimate) and the reservation
+    # gets the 60-minute Pro TTL and a mid-run USD limit.
+    pro: "CostGuardProFields | None" = None
+
+
+class CostGuardProFields(BaseModel):
+    """Mirror of the renderer's ProConfig fields that shape the cost."""
+
+    deep_think_llm: str | None = Field(default=None, max_length=120)
+    quick_think_llm: str | None = Field(default=None, max_length=120)
+    selected_analysts: list[str] | None = Field(default=None, max_length=8)
+    max_debate_rounds: int | None = Field(default=None, ge=0, le=20)
+    max_risk_discuss_rounds: int | None = Field(default=None, ge=0, le=20)
 
 
 class CostGuardReserveRequest(CostGuardCheckRequest):
     override: bool = False
+
+
+CostGuardCheckRequest.model_rebuild()
+CostGuardReserveRequest.model_rebuild()
 
 
 class LLMModelsRequest(BaseModel):

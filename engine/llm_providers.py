@@ -73,13 +73,35 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "gpt-5-mini":          {"input": 1.00, "output": 4.00},
     "gpt-5":               {"input": 8.00, "output": 30.00},
     "gpt-5.5":             {"input": 10.00, "output": 40.00},
-    # Anthropic (refreshed 2026-07-30)
-    "claude-haiku-4-5":    {"input": 1.00,  "output": 5.00},
-    "claude-sonnet-4-5":   {"input": 3.00,  "output": 15.00},
+    # Anthropic first-party prices, refreshed 2026-11-11 from Anthropic's
+    # models reference (as of 2026-11-03). Ids are the aliases; a DATED id the
+    # API may return (e.g. claude-haiku-4-5-20251001) resolves to its alias
+    # row through `rates_for` below, so dated ids are never "unknown".
+    # Mythos 5.x is priced like Fable 5.x (per the coordinator's review,
+    # same reference). Mythos Preview is deprecated and believed to be priced
+    # ABOVE our 15/75 Claude ceiling (25/125, unverified), so it gets an
+    # explicit row and is excluded from discovery (provider_models).
+    "claude-mythos-preview": {"input": 25.00, "output": 125.00},
+    "claude-mythos-5-2":   {"input": 8.00,  "output": 40.00},
+    "claude-mythos-5-1":   {"input": 10.00, "output": 50.00},
+    "claude-mythos-5":     {"input": 10.00, "output": 50.00},
+    "claude-fable-5-2":    {"input": 8.00,  "output": 40.00},
+    "claude-fable-5-1":    {"input": 10.00, "output": 50.00},
+    "claude-fable-5":      {"input": 10.00, "output": 50.00},
+    "claude-opus-5-5":     {"input": 4.00,  "output": 20.00},
+    "claude-opus-5":       {"input": 5.00,  "output": 25.00},
+    "claude-opus-4-8":     {"input": 5.00,  "output": 25.00},
+    "claude-opus-4-7":     {"input": 5.00,  "output": 25.00},  # kept for saved preferences
+    "claude-opus-4-6":     {"input": 5.00,  "output": 25.00},
+    "claude-sonnet-5-5":   {"input": 2.00,  "output": 10.00},
+    "claude-sonnet-5":     {"input": 2.00,  "output": 10.00},
     "claude-sonnet-4-6":   {"input": 3.00,  "output": 15.00},
-    "claude-opus-4-7":     {"input": 15.00, "output": 75.00},  # kept for backward compat
-    "claude-opus-4-8":     {"input": 15.00, "output": 75.00},  # conservative ceiling; verify vs billing
-    "claude-fable-5":      {"input": 15.00, "output": 75.00},  # new model; conservative ceiling
+    "claude-sonnet-4-5":   {"input": 3.00,  "output": 15.00},  # deprecated, retires 2026-11-30
+    # Haiku 5.5 bills $0.10/$0.50 normally but $0.50/$2.50 above 100K-token
+    # prompts. We store the higher tier: this table is a ceiling, and a
+    # ceiling has to hold for the expensive case too.
+    "claude-haiku-5-5":    {"input": 0.50,  "output": 2.50},
+    "claude-haiku-4-5":    {"input": 1.00,  "output": 5.00},
     # Google Gemini
     "gemini-2.0-flash":    {"input": 0.10, "output": 0.40},
     "gemini-2.5-flash":    {"input": 0.30, "output": 2.50},
@@ -104,17 +126,364 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "MiniMax-M2.7":            {"input": 1.00, "output": 3.00},
     "MiniMax-M2.7-highspeed":  {"input": 1.00, "output": 3.00},
     "MiniMax-M2.5":            {"input": 1.00, "output": 3.00},
-    # OpenRouter (passthrough — actual cost depends on the underlying model;
-    # we record the model string with no rate and the engine logs zero,
-    # which the UI surfaces as "unknown".)
+    # OpenRouter ids ("vendor/model") are NOT listed here. Their price comes
+    # from OpenRouter's own catalog at discovery time (`register_runtime_rates`)
+    # or, failing that, from the vendor rules in `rates_for` below.
 }
 
 
-def estimate_cost(model: str, in_tokens: int, out_tokens: int) -> float:
+# ---- Rate resolution (one resolver for logging AND CostGuard) -------------
+#
+# Why one shared resolver: the cost log (`estimate_cost`) and the spend cap
+# (`cost_guard.worst_case_reservation`) used to look models up in the table
+# independently, and both returned $0 for anything missing. Live model
+# discovery makes "a model we have never priced" the normal case, so a $0
+# fallback would let a newly listed model walk straight past the spend cap.
+# Every unknown model now resolves to a conservative CEILING instead.
+# Over-estimating is the safe direction: CostGuard stops sooner, never later.
+
+# Prices learned from OpenRouter's /models catalog during discovery, keyed by
+# the exact OpenRouter id. In memory only: an engine restart empties it, and
+# the vendor rules below cover that gap until the next discovery call.
+_RUNTIME_RATES: dict[str, dict[str, float]] = {}
+
+# Family ceilings for models with no row. Deliberately at or above the most
+# expensive current model in each family.
+_CEIL_CLAUDE_TOP = {"input": 15.00, "output": 75.00}   # opus / fable / mythos / unrecognised claude
+_CEIL_CLAUDE_MID = {"input": 5.00, "output": 25.00}    # sonnet, haiku
+_CEIL_OPENAI = {"input": 15.00, "output": 60.00}       # gpt-*, o1/o3/o4...
+_CEIL_OPENAI_LEGACY_GPT4 = {"input": 60.00, "output": 120.00}  # gpt-4 / gpt-4-32k (pre-turbo)
+_CEIL_OPENAI_PREMIUM = {"input": 150.00, "output": 600.00}     # *-pro, deep-research, gpt-4.5
+_CEIL_GEMINI = {"input": 5.00, "output": 20.00}
+_CEIL_GROK = {"input": 5.00, "output": 15.00}
+# Anything else we cannot place (an unfamiliar OpenRouter vendor, a renamed
+# MiniMax model). Same as the most expensive family.
+_CEIL_UNKNOWN = {"input": 15.00, "output": 75.00}
+
+# OpenRouter vendor prefixes whose model part follows the first-party naming.
+_OPENROUTER_VENDORS = {"anthropic", "openai", "google", "x-ai"}
+
+_DATE_SUFFIX = re.compile(r"-\d{8}$")  # Anthropic-style snapshot: -20251001
+
+
+def normalize_model_id(model: str) -> str:
+    """Strip a trailing ``-YYYYMMDD`` snapshot date and a trailing ``-latest``.
+
+    ``claude-haiku-4-5-20251001`` -> ``claude-haiku-4-5``. Only the 8-digit
+    form is stripped on purpose: OpenAI's ``gpt-4o-2024-05-13`` style dates
+    can point at OLDER snapshots priced above the alias, so mapping them to the
+    alias row could under-reserve. Those fall to the family ceiling instead.
+    """
+    m = (model or "").strip()
+    if m.endswith("-latest"):
+        m = m[: -len("-latest")]
+    return _DATE_SUFFIX.sub("", m)
+
+
+def register_runtime_rates(model: str, *, input_per_m: float, output_per_m: float) -> None:
+    """Record a price learned at runtime (OpenRouter discovery)."""
+    _RUNTIME_RATES[model] = {"input": float(input_per_m), "output": float(output_per_m)}
+
+
+def _family_ceiling(model: str) -> Optional[dict[str, float]]:
+    """Conservative per-family ceiling for a model with no exact price row."""
+    m = model.lower()
+    if m.startswith("claude-"):
+        if "haiku" in m or "sonnet" in m:
+            return _CEIL_CLAUDE_MID
+        # opus, fable, mythos, and any Claude name we don't recognise yet.
+        return _CEIL_CLAUDE_TOP
+    # The original gpt-4 (and its -0613 / -0314 snapshots and -32k variant)
+    # costs MORE than every newer OpenAI chat model: $30/$60 per 1M, and
+    # $60/$120 for 32k. OpenAI still lists it, so the generic gpt ceiling
+    # would under-reserve it. (Found by scanning OpenRouter's catalog.)
+    if m == "gpt-4" or m.startswith("gpt-4-0") or m.startswith("gpt-4-32k"):
+        return _CEIL_OPENAI_LEGACY_GPT4
+    if m.startswith("gpt-") or re.match(r"^o\d", m):
+        # Premium tiers (gpt-5.5-pro at 30/180, o1-pro at 150/600, gpt-4.5
+        # at 75/150, deep-research...) cost far more than the generic gpt
+        # ceiling. Discovery filters them out of the picker, but a saved id,
+        # a Telegram config or a direct reserve call can still carry one, so
+        # the resolver itself must be safe for them.
+        if "-pro" in m or "deep-research" in m or m.startswith("gpt-4.5"):
+            return _CEIL_OPENAI_PREMIUM
+        return _CEIL_OPENAI
+    if m.startswith("gemini-"):
+        return _CEIL_GEMINI
+    if m.startswith("grok-"):
+        return _CEIL_GROK
+    return None
+
+
+def _table_lookup(model: str) -> Optional[dict[str, float]]:
+    """Exact row, then the date/-latest-normalized row."""
     rates = _COST_PER_M_TOKENS.get(model)
+    if rates is None:
+        rates = _COST_PER_M_TOKENS.get(normalize_model_id(model))
+    return rates
+
+
+def _openrouter_rates(model: str) -> dict[str, float]:
+    """Price an OpenRouter id (``vendor/model[:variant]``) we have no
+    catalog price for (e.g. right after an engine restart).
+
+    OpenRouter bills the vendor's own price, so for the four vendors we also
+    support first-party we reuse our first-party row (itself a ceiling).
+    Without this, the default ``openai/gpt-4o-mini`` would be priced at the
+    15/60 family ceiling, about 100x its real cost, and one run would eat the
+    daily cap. Unrecognised vendors get the top ceiling.
+    """
+    vendor, _, name = model.partition("/")
+    vendor = vendor.lower()
+    name = name.split(":", 1)[0]  # ":free" / ":beta" style variants
+    if vendor not in _OPENROUTER_VENDORS or not name:
+        return _CEIL_UNKNOWN
+    rates = _table_lookup(name)
+    if rates is None and vendor == "anthropic":
+        # OpenRouter writes Claude versions with dots (claude-sonnet-4.6);
+        # Anthropic's own ids use dashes (claude-sonnet-4-6).
+        rates = _table_lookup(name.replace(".", "-"))
+    if rates is not None:
+        return rates
+    return _family_ceiling(name) or _CEIL_UNKNOWN
+
+
+def rates_for(model: str, provider: Optional[str] = None) -> Optional[dict[str, float]]:
+    """Per-1M-token ``{"input", "output"}`` USD rates for ``model``, or None.
+
+    Resolution order (first hit wins):
+
+    1. exact row in ``_COST_PER_M_TOKENS``
+    2. the row for the date/-latest-normalized id
+    3. a price learned from OpenRouter's catalog (exact OpenRouter id)
+    4. ceilings: OpenRouter vendor rules for ``vendor/model`` ids, else the
+       model-family ceiling (claude / gpt / o-series / gemini / grok)
+
+    Returns None only when ``provider == "local"`` (on-device, always $0), or
+    when nothing matches AND no cloud ``provider`` is given. Callers that
+    know the run is per-token billed (``worst_case_reservation``, or
+    ``estimate_cost`` with a cloud provider) treat None as the top ceiling,
+    never as $0. OAuth runs are handled by the callers before this is reached
+    (subscription billed, $0).
+    """
+    if provider == "local":
+        return None
+    model = (model or "").strip()
+    rates = _table_lookup(model)
+    if rates is not None:
+        return rates
+    if model in _RUNTIME_RATES:
+        return _RUNTIME_RATES[model]
+    if "/" in model:
+        return _openrouter_rates(model)
+    rates = _family_ceiling(model)
+    if rates is not None:
+        return rates
+    return _CEIL_UNKNOWN if provider else None
+
+
+def estimate_cost(
+    model: str, in_tokens: int, out_tokens: int, *, provider: Optional[str] = None
+) -> float:
+    """USD estimate for a finished (or partial) run. Pass ``provider`` so an
+    unrecognised cloud model is priced at the ceiling instead of $0; local
+    runs are $0. Without a provider, a model nothing matches logs $0 (the
+    historical behaviour, kept for callers that cannot say)."""
+    rates = rates_for(model, provider)
     if rates is None:
         return 0.0
     return (in_tokens * rates["input"] + out_tokens * rates["output"]) / 1_000_000
+
+
+
+
+def per_token_rates(model: str, provider: Optional[str] = None) -> dict[str, float]:
+    """Rates for a run that is KNOWN to be per-token billed (an api_key run).
+
+    Never None and never $0: when the caller did not say which provider, it is
+    inferred from the model id, and a model nothing recognises (an upstream
+    catalog id such as a DeepSeek or Qwen model) gets the top ceiling. This is
+    the function Cost Guard and the Pro meter use, so a brand-new model can
+    never slip past a spend cap by pricing at zero.
+    """
+    p = provider or infer_provider(model) or "unknown"
+    if p == "local":
+        # A local runtime is never api_key billed; callers screen auth_kind
+        # first. Price it at the ceiling rather than $0 if one ever gets here.
+        p = "unknown"
+    return rates_for(model, p) or _CEIL_UNKNOWN
+
+
+# ---- Reasoning predicates (ported from the Lite app's engine) ------------
+#
+# Ported for PRICING ONLY: CostGuard's Pro estimator (cost_guard.py) uses these
+# to decide whether a model spends hidden thinking tokens, which bill as output.
+# Pro's LLM calls go through the upstream tradingagents clients, not adapters
+# here, so nothing below changes a request. Keep in sync with Lite's copy.
+
+
+def openai_is_classic_chat_model(model: str) -> bool:
+    """gpt-4o / gpt-4.1 / gpt-4-turbo / gpt-3.5 style: accept `temperature`
+    and `max_tokens`. The gpt-5 family and the o-series are reasoning models:
+    they reject a non-default temperature and reject `max_tokens` in favour of
+    `max_completion_tokens` (the pinned openai SDK documents `max_tokens` as
+    "not compatible with o-series models")."""
+    m = (model or "").strip().lower()
+    return m.startswith("gpt-4") or m.startswith("gpt-3.5")
+
+
+def openai_reasoning_effort(model: str) -> Optional[str]:
+    """Lowest `reasoning_effort` an OpenAI reasoning model accepts, or None
+    to leave the parameter out.
+
+    Why: reasoning models spend hidden reasoning tokens out of the SAME
+    `max_completion_tokens` budget as the visible answer. With our small
+    per-agent budget (400 by default) a model on its default ("medium")
+    effort can spend everything on reasoning and return no text at all.
+    Asking for the least reasoning keeps the budget for the answer.
+
+    Per the pinned openai SDK (2.36) docs for `reasoning_effort`:
+    - models before gpt-5.1 default to "medium" and do NOT support "none";
+      the gpt-5 family (gpt-5, -mini, -nano) has "minimal";
+    - gpt-5.1 supports "none" (its default). We send "none" for gpt-5.1 and
+      later too (gpt-5.2+, gpt-6+): an assumption, since the SDK docs only
+      name gpt-5.1. If a later model rejects it, the run fails loudly with
+      a 400 rather than quietly;
+    - the o-series predates "minimal", so it gets "low";
+    - gpt-5-pro supports only "high" (its default), and the "-chat" models
+      are not reasoning models: leave the parameter out for both.
+    """
+    m = (model or "").strip().lower()
+    if "-pro" in m or "chat" in m:
+        return None
+    if re.match(r"^o\d", m):
+        return "low"
+    version = re.match(r"^gpt-(\d+)(?:\.(\d+))?", m)
+    if not version:
+        return None
+    major, minor = int(version.group(1)), int(version.group(2) or 0)
+    if major < 5:
+        return None
+    if major == 5 and minor == 0:
+        return "minimal"
+    return "none"
+
+
+
+# OpenRouter reasoning capability learned from its /models catalog, keyed by
+# exact OpenRouter id, next to the price in _RUNTIME_RATES:
+# {"capable": bool, "efforts": [..], "mandatory": bool}. In memory only.
+_RUNTIME_REASONING: dict[str, dict[str, Any]] = {}
+
+# Lowest first. OpenRouter's documented effort values.
+_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def register_runtime_reasoning(
+    model: str, *, capable: bool, efforts: Optional[list[str]] = None, mandatory: bool = False
+) -> None:
+    """Record whether an OpenRouter model reasons (from its catalog entry)."""
+    _RUNTIME_REASONING[model] = {
+        "capable": bool(capable),
+        "efforts": [e for e in (efforts or []) if e in _EFFORT_ORDER],
+        "mandatory": bool(mandatory),
+    }
+
+
+def infer_provider(model: str) -> Optional[str]:
+    """Best guess of the provider from the model id alone, used when a caller
+    (an older renderer's /cost-guard/reserve) doesn't say. Mirrors the shape
+    rules `rates_for` uses."""
+    m = (model or "").strip().lower()
+    if "/" in m:
+        return "openrouter"
+    if m.startswith("claude-"):
+        return "anthropic"
+    if m.startswith("gpt-") or re.match(r"^o\d", m):
+        return "openai"
+    if m.startswith("gemini-"):
+        return "gemini"
+    if m.startswith("grok-"):
+        return "xai"
+    return None
+
+
+def anthropic_thinks_by_default(model: str) -> bool:
+    """Claude models that think when `thinking` is omitted.
+
+    Opus 5 / 5.5, Sonnet 5 / 5.5, Haiku 5.5, and every Fable and Mythos model.
+    Opus 4.8 / 4.7 / 4.6, Sonnet 4.6 / 4.5 and Haiku 4.5 (and older) answer
+    without thinking. Any opus/sonnet/haiku with a major version of 5 or more
+    counts as thinking, so a future Claude defaults to the safe side
+    (room to think, and a reservation that covers it).
+    """
+    m = normalize_model_id(model).lower()
+    if m.startswith("claude-fable") or m.startswith("claude-mythos"):
+        return True
+    version = re.match(r"^claude-(?:opus|sonnet|haiku)-(\d+)", m)
+    return bool(version) and int(version.group(1)) >= 5
+
+
+def gemini_thinks_by_default(model: str) -> bool:
+    """Gemini 2.5 and 3.x think by default, inside max_output_tokens.
+
+    gemini-2.5-flash-lite is the exception: it does not think unless asked.
+    The floating aliases (gemini-flash-latest, gemini-pro-latest, ...) point
+    at the current 2.5 / 3.x models, so they follow the thinking rule.
+    """
+    m = (model or "").strip().lower()
+    if m.startswith("gemini-2.5-flash-lite"):
+        return False
+    if re.match(r"^gemini-(flash|pro|flash-lite)-latest$", m):
+        return True
+    return m.startswith("gemini-2.5") or bool(re.match(r"^gemini-[3-9]", m))
+
+
+def openai_is_reasoning_model(model: str) -> bool:
+    """OpenAI models that THINK on our requests: the gpt-5 line and the
+    o-series, plus -pro tiers (which only run at "high").
+
+    gpt-5.1 and later are sent reasoning_effort "none" (see
+    `openai_reasoning_effort`), which means no thinking, so they need no
+    extra room and don't count here."""
+    if openai_is_classic_chat_model(model):
+        return False
+    m = (model or "").strip().lower()
+    if "-pro" in m:
+        return True
+    effort = openai_reasoning_effort(model)
+    return effort is not None and effort != "none"
+
+
+def _openrouter_split(model: str) -> tuple[str, str]:
+    vendor, _, name = (model or "").partition("/")
+    return vendor.lower(), name.split(":", 1)[0]
+
+
+def openrouter_name_reasons(model: str) -> bool:
+    """Name rules for OpenRouter ids from the vendors we also support
+    first-party (used when the catalog is not loaded, or says nothing
+    useful). The same rules as the direct paths, applied to the part after
+    the slash. Anything else: False (the empty-answer guard still applies)."""
+    vendor, name = _openrouter_split(model)
+    if vendor == "openai":
+        return openai_is_reasoning_model(name)
+    if vendor == "anthropic":
+        return anthropic_thinks_by_default(name.replace(".", "-"))
+    if vendor == "google":
+        return gemini_thinks_by_default(name)
+    return False
+
+
+def openrouter_is_reasoning_model(model: str) -> bool:
+    # OpenAI on OpenRouter follows the direct OpenAI rules exactly, so the
+    # two paths can't disagree (e.g. gpt-5.1 at "none" thinks not at all).
+    if _openrouter_split(model)[0] == "openai":
+        return openrouter_name_reasons(model)
+    info = _RUNTIME_REASONING.get(model)
+    if info is not None:
+        return info["capable"]
+    return openrouter_name_reasons(model)
 
 
 # ---- Provider config ------------------------------------------------------

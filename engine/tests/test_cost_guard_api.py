@@ -43,9 +43,9 @@ def test_state_returns_defaults_on_fresh_db(client):
     assert data["spend"]["monthly_usd"] == 0
     assert data["spend"]["sessions_today"] == 0
     assert data["config"]["enabled"] is True
-    assert data["config"]["cap_daily_usd"] == 1.00
-    assert data["config"]["cap_weekly_usd"] == 5.00
-    assert data["config"]["cap_monthly_usd"] == 15.00
+    assert data["config"]["cap_daily_usd"] == 5.00
+    assert data["config"]["cap_weekly_usd"] == 15.00
+    assert data["config"]["cap_monthly_usd"] == 45.00
 
 
 def test_state_requires_bearer_token(tmp_db):
@@ -63,7 +63,7 @@ def test_config_update_partial(client):
     assert r.status_code == 200
     data = r.json()
     assert data["cap_daily_usd"] == 2.50
-    assert data["cap_weekly_usd"] == 5.00  # unchanged
+    assert data["cap_weekly_usd"] == 15.00  # unchanged
 
     r2 = client.get("/cost-guard/state")
     assert r2.json()["config"]["cap_daily_usd"] == 2.50

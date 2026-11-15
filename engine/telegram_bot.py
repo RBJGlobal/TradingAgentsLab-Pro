@@ -863,6 +863,8 @@ class TelegramBot:
                 auth_kind=provider_config.auth_kind,
                 max_tokens=provider_config.max_tokens,
                 override=False,
+                # Lets an unknown model price at its provider's ceiling.
+                provider=provider_config.provider,
             )
             reservation_id = reservation.reservation_id
         except cost_guard.CostGuardBlocked as exc:
@@ -934,9 +936,18 @@ class TelegramBot:
         # writes when session.complete is present, so this is a no-op for
         # aborted streams. write_session_from_events is best-effort and
         # never raises — failures log to stderr.
-        storage.write_session_from_events(
+        session_id = storage.write_session_from_events(
             ticker=ticker, trade_date=trade_date, events=events
         )
+        # A completed run whose History row could not be written has no row
+        # to carry its cost; flag the reservation so it still counts toward
+        # the caps (same rule as the desktop WebSocket path).
+        if (
+            session_id is None
+            and reservation_id
+            and any(isinstance(e, dict) and e.get("type") == "session.complete" for e in events)
+        ):
+            cost_guard.mark_unrecorded(reservation_id)
 
         if decision is None:
             await self._reply(

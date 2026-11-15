@@ -28,6 +28,15 @@ Design notes (the non-obvious parts, proven by probes in the P1 review gate):
   call, the cap is a "may slightly exceed" safety backstop, not a hard ceiling;
   the primary budget control remains the pre-flight cost-guard reservation.
 
+* The same meter enforces a USD limit (Cost Guard's mid-run stop; the limit is
+  computed at reserve time, see ``cost_guard._run_limit``). Running usage is
+  priced exactly the way the finalized cost is (``_run_rates``), so the stop
+  decision matches the ledger. To avoid overshooting by a whole call, the check
+  runs BEFORE each LLM call: if spent-so-far plus the largest single call seen
+  so far could cross the limit, the call is refused and the graph halts with a
+  ``run.cost_cap`` event. A run whose remaining calls are all small enough
+  finishes normally even if it overshoots its own estimate.
+
 * The real Portfolio Manager emits a 5-tier rating (Buy / Overweight / Hold /
   Underweight / Sell) with no confidence field, rendered as markdown. The free
   app's STANCE=/CONVICTION= regex parser does not match that shape, so we parse
@@ -44,7 +53,7 @@ import math
 import os
 import re
 import sys
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 
@@ -178,25 +187,145 @@ class TokenCapExceeded(Exception):
     """Raised by the in-run token meter when the running total crosses the cap."""
 
 
-class _TokenMeter(BaseCallbackHandler):
-    """Meter token usage across the whole graph run and abort when over cap.
+class CostCapExceeded(Exception):
+    """Raised by the in-run meter when the next call could cross the USD limit."""
 
-    ``raise_error = True`` is mandatory: without it LangChain logs and swallows
-    exceptions raised inside callbacks, so the cap would never actually stop the
-    run. With it, the raise propagates out of ``graph.astream`` and halts.
+
+# Messages shown to the user when the USD stop fires. No em or en dashes:
+# these strings reach the analysis screen.
+_COST_CAP_MESSAGE = (
+    "Stopped: This run reached your Cost Guard {dimension} cap after spending "
+    "${used:.2f}. Raise the cap in Settings, Cost Guard, or use Override."
+)
+_RUNAWAY_MESSAGE = (
+    "Stopped: This run spent ${used:.2f}, about three times its estimate of "
+    "${est:.2f}, so Cost Guard ended it as a likely runaway. Check the models "
+    "and round counts in Settings, then try again."
+)
+
+
+def _price(rates: Optional[Dict[str, float]], in_tok: int, out_tok: int) -> float:
+    """USD for a token count at per-1M rates. No rates (OAuth/local) is $0."""
+    if not rates:
+        return 0.0
+    return (in_tok * rates["input"] + out_tok * rates["output"]) / 1_000_000
+
+
+class _TokenMeter(BaseCallbackHandler):
+    """Meter token usage across the whole graph run and abort when over a cap.
+
+    Two independent stops: the optional token cap (checked after each call)
+    and the optional USD limit (checked before each call, see the module
+    docstring). ``raise_error = True`` is mandatory: without it LangChain logs
+    and swallows exceptions raised inside callbacks, so neither stop would
+    actually halt the run. With it, the raise propagates out of
+    ``graph.astream`` and halts.
     """
 
     raise_error = True
 
-    def __init__(self, cap: Optional[int]) -> None:
+    def __init__(
+        self,
+        cap: Optional[int],
+        *,
+        rates: Optional[Dict[str, float]] = None,
+        usd_limit: Optional[float] = None,
+        rate_for: Optional[Callable[[str], Optional[Dict[str, float]]]] = None,
+    ) -> None:
         self.cap = cap
+        # Fallback rates (the higher of deep and quick) for a call whose model
+        # the callback could not identify. None means the run is free.
+        self.rates = rates
+        # Per-model resolver: a split run (e.g. Opus deep, Haiku quick) is
+        # billed per call at that call's own model, not at the pricier one.
+        self.rate_for = rate_for
+        # A USD limit only means something when calls are priced.
+        self.usd_limit = usd_limit if rates else None
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
+        self.max_call_usd = 0.0
+        # Running USD total, summed call by call. This is THE cost: the
+        # mid-run stop, cost.usage, session.complete and the finalized
+        # reservation all read it, so they always agree.
+        self._spent_usd = 0.0
+        # LangChain run_id -> model name, captured at call start.
+        self._call_models: Dict[Any, str] = {}
+        # Set whenever the USD stop fires. Upstream agents sometimes catch
+        # exceptions around an LLM call (e.g. a structured-output fallback),
+        # which could swallow the raise; full_debate checks this flag after
+        # the graph so a swallowed stop still ends the run as run.cost_cap.
+        self.tripped = False
 
     @property
     def total(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def spent_usd(self) -> float:
+        return self._spent_usd
+
+    def _rates_for_call(self, run_id: Any, response: Any = None) -> Optional[Dict[str, float]]:
+        """Rates for one finished call: its own model when known, else the
+        conservative fallback. Free runs (no fallback rates) stay $0."""
+        if not self.rates:
+            return None
+        model = self._call_models.pop(run_id, None) if run_id is not None else None
+        if not model and response is not None:
+            try:
+                llm_output = getattr(response, "llm_output", None) or {}
+                model = llm_output.get("model_name") or llm_output.get("model")
+            except Exception:
+                model = None
+        if model and self.rate_for is not None:
+            try:
+                rates = self.rate_for(str(model))
+                if rates:
+                    return rates
+            except Exception:
+                pass
+        return self.rates
+
+    def _remember_model(self, kwargs: Dict[str, Any]) -> None:
+        run_id = kwargs.get("run_id")
+        if run_id is None:
+            return
+        params = kwargs.get("invocation_params") or {}
+        meta = kwargs.get("metadata") or {}
+        model = (
+            params.get("model")
+            or params.get("model_name")
+            or params.get("model_id")
+            or meta.get("ls_model_name")
+        )
+        if model:
+            self._call_models[run_id] = str(model)
+
+    def next_call_could_exceed(self) -> bool:
+        """True when one more call as large as the largest so far could push
+        spend past the USD limit. The first call is always allowed (nothing
+        to size it by); the after-call check in on_llm_end catches a call
+        that by itself carries spend over the limit."""
+        if self.usd_limit is None:
+            return False
+        return self.spent_usd + self.max_call_usd > self.usd_limit
+
+    def _check_before_call(self) -> None:
+        if self.next_call_could_exceed():
+            self.tripped = True
+            raise CostCapExceeded(
+                f"USD limit {self.usd_limit:.4f} would be exceeded "
+                f"(spent {self.spent_usd:.4f}, largest call {self.max_call_usd:.4f})"
+            )
+
+    # Chat models fire on_chat_model_start; plain LLMs fire on_llm_start.
+    def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:
+        self._remember_model(kwargs)
+        self._check_before_call()
+
+    def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> None:
+        self._remember_model(kwargs)
+        self._check_before_call()
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         self.calls += 1
@@ -220,8 +349,16 @@ class _TokenMeter(BaseCallbackHandler):
                 pass
         self.input_tokens += in_tok
         self.output_tokens += out_tok
+        call_usd = _price(self._rates_for_call(kwargs.get("run_id"), response), in_tok, out_tok)
+        self._spent_usd += call_usd
+        self.max_call_usd = max(self.max_call_usd, call_usd)
         if self.cap is not None and self.total >= self.cap:
             raise TokenCapExceeded(f"token cap {self.cap} exceeded ({self.total})")
+        if self.usd_limit is not None and self.spent_usd > self.usd_limit:
+            self.tripped = True
+            raise CostCapExceeded(
+                f"USD limit {self.usd_limit:.4f} exceeded ({self.spent_usd:.4f})"
+            )
 
 
 def _last_message_has_tool_calls(delta: Dict[str, Any]) -> bool:
@@ -387,24 +524,54 @@ def _build_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return merged
 
 
-def _run_cost(auth_kind: str, merged: Dict[str, Any], meter: "_TokenMeter") -> float:
-    """Best-effort USD estimate for the metered run.
+def _run_rates(auth_kind: str, merged: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    """Fallback per-1M rates for THIS run: the higher of deep and quick.
 
-    OAuth (subscription) and local runs are $0 from the engine's perspective.
-    Otherwise priced against the deep model (the pricier of the two) as a
-    conservative figure. ``estimate_cost`` is imported lazily so the headless
-    tests, which load this module standalone (no package context), never trip
-    the relative import — they simply get 0.0, which they do not assert on.
+    The meter prices each call at its own model (``_run_rate_for``); these
+    rates are used only for a call whose model the callback could not
+    identify, and to size the per-call overshoot guard before any call has
+    run. Conservative on purpose. Unknown models resolve to a family ceiling
+    via ``per_token_rates``, never $0. OAuth (subscription) and local runs
+    return None ($0).
+
+    ``per_token_rates`` is imported lazily so a test that loads this module
+    without package context never trips the relative import; it then gets
+    None ($0), which such tests do not assert on.
     """
     if auth_kind in ("oauth", "local"):
-        return 0.0
+        return None
     try:
-        from .llm_providers import estimate_cost
+        from .llm_providers import per_token_rates
 
-        model = merged.get("deep_think_llm") or ""
-        return float(estimate_cost(model, meter.input_tokens, meter.output_tokens))
+        provider = (merged.get("llm_provider") or "").lower() or None
+        deep = per_token_rates(merged.get("deep_think_llm") or "", provider)
+        quick = per_token_rates(merged.get("quick_think_llm") or "", provider)
+        return {
+            "input": max(deep["input"], quick["input"]),
+            "output": max(deep["output"], quick["output"]),
+        }
     except Exception:  # noqa: BLE001 — pricing is best-effort, never fatal
+        return None
+
+
+def _run_rate_for(auth_kind: str, merged: Dict[str, Any]):
+    """Per-model rate resolver for the meter, or None for a free run."""
+    if auth_kind in ("oauth", "local"):
+        return None
+    try:
+        from .llm_providers import per_token_rates
+    except Exception:  # noqa: BLE001
+        return None
+    provider = (merged.get("llm_provider") or "").lower() or None
+    return lambda model: per_token_rates(model, provider)
+
+
+def _run_cost(auth_kind: str, merged: Dict[str, Any], meter: "_TokenMeter") -> float:
+    """USD for the metered run: the meter's call-by-call total, the same
+    number its mid-run stop acts on. OAuth/local runs are always $0."""
+    if auth_kind in ("oauth", "local"):
         return 0.0
+    return meter.spent_usd
 
 
 def _finalize_reservation(
@@ -412,14 +579,21 @@ def _finalize_reservation(
     auth_kind: str,
     merged: Dict[str, Any],
     meter: "_TokenMeter",
+    *,
+    completed: bool,
 ) -> None:
     """Settle the pre-flight CostGuard reservation with the metered cost.
 
-    Mirrors ``live_debate``'s finalize: runs on any exit path (normal completion,
-    token-cap abort, node error, or client disconnect), bills the real partial
-    cost so a mid-run exit does not leave the reservation stuck as in-flight, and
-    is best-effort (a finalize failure must never break the stream). Imported
-    lazily so headless tests that never reserve don't touch cost_guard.
+    Runs on any exit path (normal completion, token-cap or cost-cap abort,
+    node error, or client disconnect), bills the real partial cost so a
+    mid-run exit does not leave the reservation stuck as in-flight, and is
+    best-effort (a finalize failure must never break the stream).
+
+    ``completed`` is False for every exit that did not yield session.complete.
+    Those runs write no sessions row, so the reservation is finalized as
+    ``unrecorded`` and its real cost counts toward the caps on its own;
+    otherwise an aborted run would be free against every cap. Imported lazily
+    so headless tests that never reserve don't touch cost_guard.
     """
     if not reservation_id:
         return
@@ -427,7 +601,9 @@ def _finalize_reservation(
         from . import cost_guard as _cost_guard
 
         _cost_guard.finalize_reservation(
-            reservation_id, actual_cost_usd=_run_cost(auth_kind, merged, meter)
+            reservation_id,
+            actual_cost_usd=_run_cost(auth_kind, merged, meter),
+            unrecorded=not completed,
         )
     except Exception as exc:  # noqa: BLE001 — finalize is best-effort
         sys.stderr.write(
@@ -449,12 +625,17 @@ async def full_debate(
     oauth_account_id: Optional[str] = None,
     reservation_id: Optional[str] = None,
     alpha_vantage_key: Optional[str] = None,
+    usd_limit: Optional[float] = None,
+    usd_limit_reason: Optional[str] = None,
+    usd_limit_dimension: Optional[str] = None,
+    est_cost_usd: Optional[float] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
     """Drive the full LangGraph diligence graph, yielding UI-compatible events.
 
     Event stream (extends the free app's contract):
       session.start, graph.plan, phase.transition, agent.activity, agent.message,
-      cost.usage, run.token_cap (on abort), run.error (on failure), session.complete.
+      cost.usage, run.token_cap / run.cost_cap (on abort), run.error (on
+      failure), session.complete.
 
     ``api_key`` is the BYO provider key; when present it is injected into the
     provider's standard env var only for the synchronous graph-construction span
@@ -465,6 +646,10 @@ async def full_debate(
     injection. ``reservation_id`` ties this run to a pre-flight CostGuard
     reservation that is finalized on exit (any exit path) with the metered cost;
     pass ``None`` (the default) to run without CostGuard, as the headless tests do.
+
+    ``usd_limit`` (with its ``usd_limit_reason`` "cap" or "runaway", the cap
+    ``usd_limit_dimension``, and the reservation's ``est_cost_usd``) is the
+    mid-run USD stop server.py reads from the reservation; None disables it.
     """
     analysts = selected_analysts or ["market", "social", "news", "fundamentals"]
     meter = _TokenMeter(token_cap)
@@ -472,16 +657,63 @@ async def full_debate(
     final_state: Optional[Dict[str, Any]] = None
     last_phase: Optional[str] = None
     aborted = False
+    # Set just before session.complete is yielded; any other exit leaves it
+    # False so the reservation is finalized as an unrecorded (aborted) cost.
+    completed = False
+    free = auth_kind in ("oauth", "local")
+
+    async def _refresh_limit() -> None:
+        """After each node: tell Cost Guard what this run has really used and
+        pick up the current cap headroom (another run may have started or
+        finished meanwhile). See cost_guard.refresh_run_limit."""
+        if not reservation_id or meter.usd_limit is None:
+            return
+        try:
+            from . import cost_guard as _cg
+
+            # SQLite is synchronous; run it off the event loop so the
+            # WebSocket keeps streaming while the database is busy.
+            fresh = await asyncio.to_thread(
+                _cg.refresh_run_limit,
+                reservation_id,
+                spent_usd=meter.spent_usd,
+                next_call_usd=meter.max_call_usd,
+            )
+        except Exception:  # noqa: BLE001 — never fail the run over a refresh
+            return
+        # Only ever tighten: if another run used room since our reserve, we
+        # get less; if room freed up, we keep the limit we started with
+        # (simple and conservative, the run was sized for that limit).
+        if fresh is not None and meter.usd_limit is not None:
+            meter.usd_limit = min(meter.usd_limit, fresh)
 
     def _cost_event() -> Dict[str, Any]:
         return {
             "type": "cost.usage",
             "input_tokens": meter.input_tokens,
             "output_tokens": meter.output_tokens,
-            # Cost is finalized against the provider on session.complete; during
-            # the run we report tokens and let the UI's cost-guard poll fill USD.
-            "est_cost_usd": 0.0,
-            "free": merged.get("llm_provider") in ("local",),
+            # Running cost at the same rates the finalized ledger uses.
+            "est_cost_usd": round(meter.spent_usd, 4),
+            "free": free,
+        }
+
+    def _cost_cap_event() -> Dict[str, Any]:
+        used = meter.spent_usd
+        if usd_limit_reason == "cap":
+            message = _COST_CAP_MESSAGE.format(
+                dimension=usd_limit_dimension or "spending", used=used
+            )
+        else:
+            message = _RUNAWAY_MESSAGE.format(used=used, est=float(est_cost_usd or 0.0))
+        return {
+            "type": "run.cost_cap",
+            "used_usd": round(used, 4),
+            "limit_usd": round(float(meter.usd_limit or 0.0), 4),
+            "reason": usd_limit_reason or "runaway",
+            "dimension": usd_limit_dimension,
+            "input_tokens": meter.input_tokens,
+            "output_tokens": meter.output_tokens,
+            "message": message,
         }
 
     # Outer try/finally guarantees the CostGuard reservation is settled on EVERY
@@ -491,6 +723,11 @@ async def full_debate(
     # pre-config failure still finalizes cleanly (priced at zero: no LLM calls).
     try:
         merged = _build_config(config)
+        # Price the meter now that the deep/quick models are known. Same rates
+        # as _run_cost, so the mid-run stop agrees with the finalized cost.
+        meter.rates = _run_rates(auth_kind, merged)
+        meter.rate_for = _run_rate_for(auth_kind, merged)
+        meter.usd_limit = usd_limit if meter.rates else None
 
         # Data-tool key (Alpha Vantage) must be in the environment for the WHOLE
         # run: the library's dataflows tools (news / social / fundamentals) read
@@ -655,6 +892,7 @@ async def full_debate(
                     if rnd is not None:
                         event["round"] = rnd
                     yield event
+                    await _refresh_limit()
                     yield _cost_event()
 
         except TokenCapExceeded as exc:
@@ -665,6 +903,9 @@ async def full_debate(
                 "cap": token_cap,
                 "message": str(exc),
             }
+        except CostCapExceeded:
+            aborted = True
+            yield _cost_cap_event()
         except Exception as exc:  # noqa: BLE001 - surface any node failure as a terminal event
             yield {
                 "type": "run.error",
@@ -672,25 +913,41 @@ async def full_debate(
             }
             return
 
+        if not aborted and meter.tripped:
+            # The USD stop fired but a node caught the raise and carried on
+            # with fallback text. The meter keeps refusing calls, so spend is
+            # safe, but the assessment would be built on truncated output:
+            # end the run as a cost-cap stop instead of reporting it complete.
+            aborted = True
+            yield _cost_cap_event()
+
         if aborted:
             return
 
         decision = _parse_pm_decision(final_state)
 
         # Score the bull/bear thesis strengths + risk level with one extra
-        # quick-model call (metered by the same token meter; degrades to
-        # null strengths on any failure). asyncio.to_thread keeps the sync
-        # invoke off the event loop, same as the graph stream itself.
-        try:
-            strengths = await asyncio.to_thread(
-                _score_thesis_strengths, graph, final_state
-            )
-        except Exception:
-            strengths = {
-                "bull_strength": None,
-                "bear_strength": None,
-                "risk_level": None,
-            }
+        # quick-model call (metered by the same token meter, so its cost is in
+        # the finalized total; degrades to null strengths on any failure).
+        # asyncio.to_thread keeps the sync invoke off the event loop, same as
+        # the graph stream itself. If the call could cross the USD limit we
+        # skip it: the assessment is complete without the strength bars, and
+        # the meter would refuse the call anyway (that raise is swallowed by
+        # _score_thesis_strengths like any scoring failure).
+        empty_strengths = {
+            "bull_strength": None,
+            "bear_strength": None,
+            "risk_level": None,
+        }
+        if meter.next_call_could_exceed():
+            strengths = empty_strengths
+        else:
+            try:
+                strengths = await asyncio.to_thread(
+                    _score_thesis_strengths, graph, final_state
+                )
+            except Exception:
+                strengths = empty_strengths
         decision.update(strengths)
 
         # Persist to the memory log so the NEXT same-ticker run can reflect on
@@ -724,8 +981,16 @@ async def full_debate(
             "output_tokens": meter.output_tokens,
             "estimated_cost_usd": round(_run_cost(auth_kind, merged, meter), 4),
         }
+        # Only reached once the consumer asked for the NEXT event, i.e. after
+        # the server sent and captured session.complete. If the user closes
+        # the window during the yield (WebSocket disconnect), the generator is
+        # closed at the yield, this line never runs, and the reservation is
+        # finalized as unrecorded so the paid run still counts toward the caps.
+        completed = True
     finally:
-        _finalize_reservation(reservation_id, auth_kind, merged, meter)
+        _finalize_reservation(
+            reservation_id, auth_kind, merged, meter, completed=completed
+        )
 
 
 def _extract_content(node: str, delta: Dict[str, Any], phase: str) -> str:
