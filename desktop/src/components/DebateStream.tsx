@@ -291,7 +291,7 @@ export function findTerminal(events: DebateEvent[]): TerminalState | null {
         kind: 'cost_cap',
         message:
           ev.message ||
-          `Stopped: this run reached a Cost Guard limit after spending $${ev.used_usd.toFixed(2)}.`,
+          `Stopped: This run reached a Cost Guard limit after spending $${ev.used_usd.toFixed(2)}.`,
       };
     }
     if (ev.type === 'run.token_cap') {

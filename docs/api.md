@@ -461,7 +461,7 @@ A Trading Agents Lab Pro full-graph run can end without `session.complete`. The 
   "dimension": "daily",       // which cap set the limit; null for "runaway"
   "input_tokens": 151200,
   "output_tokens": 25800,
-  "message": "Stopped: this run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
+  "message": "Stopped: This run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
 }
 
 // The optional per-run token cap was reached.

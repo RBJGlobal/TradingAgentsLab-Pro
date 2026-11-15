@@ -194,11 +194,11 @@ class CostCapExceeded(Exception):
 # Messages shown to the user when the USD stop fires. No em or en dashes:
 # these strings reach the analysis screen.
 _COST_CAP_MESSAGE = (
-    "Stopped: this run reached your Cost Guard {dimension} cap after spending "
+    "Stopped: This run reached your Cost Guard {dimension} cap after spending "
     "${used:.2f}. Raise the cap in Settings, Cost Guard, or use Override."
 )
 _RUNAWAY_MESSAGE = (
-    "Stopped: this run spent ${used:.2f}, about three times its estimate of "
+    "Stopped: This run spent ${used:.2f}, about three times its estimate of "
     "${est:.2f}, so Cost Guard ended it as a likely runaway. Check the models "
     "and round counts in Settings, then try again."
 )

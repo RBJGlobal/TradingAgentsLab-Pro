@@ -16,7 +16,7 @@ import type { DebateEvent } from '../../src/lib/engine-client';
 afterEach(() => cleanup());
 
 const CAP_MESSAGE =
-  'Stopped: this run reached your Cost Guard daily cap after spending $0.87. ' +
+  'Stopped: This run reached your Cost Guard daily cap after spending $0.87. ' +
   'Raise the cap in Settings, Cost Guard, or use Override.';
 
 const COST_CAP: DebateEvent = {

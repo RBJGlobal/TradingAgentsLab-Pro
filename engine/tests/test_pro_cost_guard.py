@@ -542,7 +542,7 @@ def test_full_debate_stops_at_the_limit_and_bills_the_partial_cost(tmp_db, monke
     assert cap["reason"] == "cap" and cap["dimension"] == "daily"
     assert cap["used_usd"] == pytest.approx(0.009)
     assert cap["limit_usd"] == pytest.approx(0.01)
-    assert cap["message"] == ("Stopped: this run reached your Cost Guard daily cap after "
+    assert cap["message"] == ("Stopped: This run reached your Cost Guard daily cap after "
                               "spending $0.01. Raise the cap in Settings, Cost Guard, or "
                               "use Override.")
     assert "—" not in cap["message"] and "–" not in cap["message"]

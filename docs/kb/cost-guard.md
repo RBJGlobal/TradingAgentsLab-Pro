@@ -87,7 +87,7 @@ A three-second anti-tamper countdown disables the Override button on first appea
 
 ## The mid-run stop
 
-> **Pro** Because the estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before every model call, it checks whether that call could push your spending past an enabled cap, using the same prices that get recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: "Stopped: this run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
+> **Pro** Because the estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before every model call, it checks whether that call could push your spending past an enabled cap, using the same prices that get recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: "Stopped: This run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
 >
 > - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left. The room is rechecked after each step of the analysis, so a run started meanwhile is taken into account, and each run's real spend so far counts against the room the others see. A run that costs more than its estimate but stays under your caps finishes normally.
 > - **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is off or no USD cap is set.
