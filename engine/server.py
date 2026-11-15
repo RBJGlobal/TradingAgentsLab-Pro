@@ -824,10 +824,19 @@ def build_app(*, token: str) -> FastAPI:
                 # Each agent.message arrives as the LLM response completes — we
                 # throttle a little between events so the UI's transition
                 # animations are still visible.
-                async for event in debate_events:
-                    await ws.send_json(event)
-                    captured_events.append(event)
-                    await asyncio.sleep(0.15)
+                try:
+                    async for event in debate_events:
+                        await ws.send_json(event)
+                        captured_events.append(event)
+                        await asyncio.sleep(0.15)
+                finally:
+                    # When the user presses Stop, send_json raises
+                    # WebSocketDisconnect mid-loop. Close the generator NOW so
+                    # its finally block finalizes the reservation with the
+                    # real partial cost right away, instead of whenever the
+                    # abandoned generator happens to be garbage-collected.
+                    # A no-op after normal exhaustion.
+                    await debate_events.aclose()
             else:
                 # Stub debate path — same UX, deterministic content.
                 for event in canned_debate(

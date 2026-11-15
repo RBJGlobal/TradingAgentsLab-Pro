@@ -21,7 +21,7 @@ The four cap dimensions:
 
 A cap of `0` means **disabled**. You can enable any subset, e.g. monthly USD only, or sessions-per-day only.
 
-> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. If you already had Cost Guard set up, your caps are kept as they were. One default Pro analysis on Claude Sonnet 4.6 costs about $1, so an older $1.00 daily cap will usually block it and offer the override: raise the daily cap in Settings if that happens.
+> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. If you already had Cost Guard set up, your caps are kept as they were. A Pro analysis with all four analysts on Claude Sonnet 4.6 is estimated at about $1.31, so an older $1.00 daily cap will block it and offer the override: raise the daily cap in Settings if that happens. A market-only analysis (the setting a new install starts with) is estimated at about $0.75.
 
 ---
 
@@ -81,7 +81,7 @@ You then choose:
 
 A three-second anti-tamper countdown disables the Override button on first appearance so you can't accidentally double-click through it. The Cancel button is always enabled.
 
-> **Pro** Trading Agents Lab Pro runs the full multi-agent graph, where analysts call data tools as many times as they need and no single step has a fixed length. No number computed before the run can be a true maximum, so the Pro estimate is a realistic figure instead: about 1.4 times what a typical run costs. It is built node by node: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model. Extra debate or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output. With the default settings (four analysts, one round of each debate, Claude Sonnet 4.6) the estimate is about $1.31. The real protection is the mid-run stop below.
+> **Pro** Trading Agents Lab Pro runs the full multi-agent graph, where analysts call data tools as many times as they need and no single step has a fixed length. No number computed before the run can be a true maximum, so the Pro estimate is a realistic figure instead: about 1.4 times what a typical run costs. It is built node by node: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model. Extra debate or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output. With all four analysts, one round of each debate and Claude Sonnet 4.6 as both models, the estimate is about $1.31; with only the market analyst (the setting a new install starts with) it is about $0.75. The real protection is the mid-run stop below.
 
 ---
 

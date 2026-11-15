@@ -239,6 +239,11 @@ class _TokenMeter(BaseCallbackHandler):
         self.output_tokens = 0
         self.calls = 0
         self.max_call_usd = 0.0
+        # Set whenever the USD stop fires. Upstream agents sometimes catch
+        # exceptions around an LLM call (e.g. a structured-output fallback),
+        # which could swallow the raise; full_debate checks this flag after
+        # the graph so a swallowed stop still ends the run as run.cost_cap.
+        self.tripped = False
 
     @property
     def total(self) -> int:
@@ -259,6 +264,7 @@ class _TokenMeter(BaseCallbackHandler):
 
     def _check_before_call(self) -> None:
         if self.next_call_could_exceed():
+            self.tripped = True
             raise CostCapExceeded(
                 f"USD limit {self.usd_limit:.4f} would be exceeded "
                 f"(spent {self.spent_usd:.4f}, largest call {self.max_call_usd:.4f})"
@@ -297,6 +303,7 @@ class _TokenMeter(BaseCallbackHandler):
         if self.cap is not None and self.total >= self.cap:
             raise TokenCapExceeded(f"token cap {self.cap} exceeded ({self.total})")
         if self.usd_limit is not None and self.spent_usd > self.usd_limit:
+            self.tripped = True
             raise CostCapExceeded(
                 f"USD limit {self.usd_limit:.4f} exceeded ({self.spent_usd:.4f})"
             )
@@ -813,6 +820,14 @@ async def full_debate(
                 "error": f"{type(exc).__name__}: {exc}",
             }
             return
+
+        if not aborted and meter.tripped:
+            # The USD stop fired but a node caught the raise and carried on
+            # with fallback text. The meter keeps refusing calls, so spend is
+            # safe, but the assessment would be built on truncated output:
+            # end the run as a cost-cap stop instead of reporting it complete.
+            aborted = True
+            yield _cost_cap_event()
 
         if aborted:
             return

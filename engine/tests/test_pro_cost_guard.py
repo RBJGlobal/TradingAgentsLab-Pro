@@ -422,13 +422,29 @@ class _FakeGraphState(TypedDict, total=False):
 class _FakeTradingGraph:
     """Stands in for TradingAgentsGraph: real LangGraph, real LangChain chat
     model, real callbacks (the meter), fake content. Each node makes one
-    1000-in / 100-out call."""
+    1000-in / 100-out call. With SWALLOW set, every node catches LLM errors
+    and carries on with fallback text, like upstream's structured-output
+    fallback does."""
+
+    SWALLOW = False
 
     def __init__(self, selected_analysts, debug, config, callbacks):
         self.quick_thinking_llm = GenericFakeChatModel(
             messages=iter([_msg() for _ in range(100)]), callbacks=callbacks
         )
-        llm = self.quick_thinking_llm
+        real = self.quick_thinking_llm
+        swallow = self.SWALLOW
+
+        class _Llm:
+            def invoke(self, prompt):
+                if not swallow:
+                    return real.invoke(prompt)
+                try:
+                    return real.invoke(prompt)
+                except Exception:  # noqa: BLE001 - the behaviour under test
+                    return AIMessage(content="fallback")
+
+        llm = _Llm()
 
         def analyst(s):
             llm.invoke("x")
@@ -511,6 +527,43 @@ def test_full_debate_stops_at_the_limit_and_bills_the_partial_cost(tmp_db, monke
     assert row[0] == 1 and row[1] == pytest.approx(0.009) and row[2] == 1
     spend, _ = cost_guard.get_state()
     assert spend.daily_usd == pytest.approx(0.009)
+
+
+def test_a_node_that_swallows_the_stop_still_ends_as_cost_cap(tmp_db, monkeypatch):
+    monkeypatch.setattr(_FakeTradingGraph, "SWALLOW", True)
+    events = _run_fake(monkeypatch, usd_limit=0.01, usd_limit_reason="cap",
+                       usd_limit_dimension="daily")
+    types = [e["type"] for e in events]
+    assert "run.cost_cap" in types and "session.complete" not in types
+    cap = next(e for e in events if e["type"] == "run.cost_cap")
+    # Every call after the stop was refused, so spend never moved past it.
+    assert cap["used_usd"] == pytest.approx(0.009)
+
+
+def test_stop_button_bills_the_partial_cost(tmp_db, monkeypatch):
+    """The user pressing Stop closes the generator mid-run (server.py calls
+    aclose on disconnect). The partial cost must be finalized as unrecorded."""
+    import asyncio
+
+    monkeypatch.setattr(fd, "TradingAgentsGraph", _FakeTradingGraph)
+    res = cost_guard.reserve(model=SONNET, auth_kind="api_key", max_tokens=400, pro=_pro())
+    config = {"llm_provider": "anthropic", "deep_think_llm": SONNET, "quick_think_llm": SONNET}
+
+    async def run_then_stop():
+        gen = fd.full_debate("NVDA", "2026-11-13", config=config,
+                             reservation_id=res.reservation_id)
+        async for e in gen:
+            if e["type"] == "cost.usage":  # one LLM call has been made
+                break
+        await gen.aclose()
+
+    asyncio.run(run_then_stop())
+    with sqlite3.connect(str(tmp_db)) as conn:
+        row = conn.execute("SELECT finalized, finalized_cost_usd, unrecorded FROM "
+                           "cost_reservations WHERE id = ?", (res.reservation_id,)).fetchone()
+    assert row[0] == 1 and row[1] > 0 and row[2] == 1
+    spend, _ = cost_guard.get_state()
+    assert spend.daily_usd == pytest.approx(row[1])
 
 
 def test_runaway_message(tmp_db, monkeypatch):
