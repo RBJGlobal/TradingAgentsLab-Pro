@@ -52,7 +52,7 @@ The engine computes a per-session cost using a static **cost rate table** (`engi
 | API-key on any per-token-billed provider | Real token usage × rate table. Logged on `session.complete`. |
 | **OpenAI OAuth** (ChatGPT subscription) | **$0**. Subscription billing happens outside our app; we record 0 so the cost ledger only reflects per-token API spend. |
 | **Local LLM** (Ollama / LM Studio) | **$0**. Local sessions cost nothing in real dollars. |
-| **OpenRouter** | Priced at the price OpenRouter lists for the model when the app has loaded its catalog, otherwise at the underlying vendor's own rate (for example `openai/gpt-4o-mini` at the gpt-4o-mini rate). |
+| **OpenRouter** | Priced at the underlying vendor's own rate when the app knows it (for example `openai/gpt-4o-mini` at the gpt-4o-mini rate), otherwise at a deliberately high family estimate. Live OpenRouter prices are not loaded yet. |
 
 **Unknown models are never priced at $0.** A model with no row in the rate table (a newly released model, a dated model id, an unfamiliar OpenRouter vendor) is priced from a deliberately high estimate for its family, for example $15 per million input tokens and $75 per million output tokens for an unrecognised Claude model or an unknown vendor. Over-estimating is the safe direction: Cost Guard stops sooner, never later. A dated id such as `claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` rate.
 
@@ -89,7 +89,7 @@ A three-second anti-tamper countdown disables the Override button on first appea
 
 > **Pro** Because the estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before every model call, it checks whether that call could push your spending past an enabled cap, using the same prices that get recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: "Stopped: this run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
 >
-> - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left when the run starts (other runs in progress count against that room). A run that costs more than its estimate but stays under your caps finishes normally.
+> - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left. The room is rechecked after each step of the analysis, so a run started meanwhile is taken into account, and each run's real spend so far counts against the room the others see. A run that costs more than its estimate but stays under your caps finishes normally.
 > - **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is off or no USD cap is set.
 > - **ChatGPT sign-in (OAuth) runs** cost $0 per token, so they have no dollar stop. The optional token cap in Settings still applies.
 >

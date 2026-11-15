@@ -53,7 +53,7 @@ import math
 import os
 import re
 import sys
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
 
@@ -230,15 +230,27 @@ class _TokenMeter(BaseCallbackHandler):
         *,
         rates: Optional[Dict[str, float]] = None,
         usd_limit: Optional[float] = None,
+        rate_for: Optional[Callable[[str], Optional[Dict[str, float]]]] = None,
     ) -> None:
         self.cap = cap
+        # Fallback rates (the higher of deep and quick) for a call whose model
+        # the callback could not identify. None means the run is free.
         self.rates = rates
+        # Per-model resolver: a split run (e.g. Opus deep, Haiku quick) is
+        # billed per call at that call's own model, not at the pricier one.
+        self.rate_for = rate_for
         # A USD limit only means something when calls are priced.
         self.usd_limit = usd_limit if rates else None
         self.input_tokens = 0
         self.output_tokens = 0
         self.calls = 0
         self.max_call_usd = 0.0
+        # Running USD total, summed call by call. This is THE cost: the
+        # mid-run stop, cost.usage, session.complete and the finalized
+        # reservation all read it, so they always agree.
+        self._spent_usd = 0.0
+        # LangChain run_id -> model name, captured at call start.
+        self._call_models: Dict[Any, str] = {}
         # Set whenever the USD stop fires. Upstream agents sometimes catch
         # exceptions around an LLM call (e.g. a structured-output fallback),
         # which could swallow the raise; full_debate checks this flag after
@@ -251,7 +263,43 @@ class _TokenMeter(BaseCallbackHandler):
 
     @property
     def spent_usd(self) -> float:
-        return _price(self.rates, self.input_tokens, self.output_tokens)
+        return self._spent_usd
+
+    def _rates_for_call(self, run_id: Any, response: Any = None) -> Optional[Dict[str, float]]:
+        """Rates for one finished call: its own model when known, else the
+        conservative fallback. Free runs (no fallback rates) stay $0."""
+        if not self.rates:
+            return None
+        model = self._call_models.pop(run_id, None) if run_id is not None else None
+        if not model and response is not None:
+            try:
+                llm_output = getattr(response, "llm_output", None) or {}
+                model = llm_output.get("model_name") or llm_output.get("model")
+            except Exception:
+                model = None
+        if model and self.rate_for is not None:
+            try:
+                rates = self.rate_for(str(model))
+                if rates:
+                    return rates
+            except Exception:
+                pass
+        return self.rates
+
+    def _remember_model(self, kwargs: Dict[str, Any]) -> None:
+        run_id = kwargs.get("run_id")
+        if run_id is None:
+            return
+        params = kwargs.get("invocation_params") or {}
+        meta = kwargs.get("metadata") or {}
+        model = (
+            params.get("model")
+            or params.get("model_name")
+            or params.get("model_id")
+            or meta.get("ls_model_name")
+        )
+        if model:
+            self._call_models[run_id] = str(model)
 
     def next_call_could_exceed(self) -> bool:
         """True when one more call as large as the largest so far could push
@@ -272,9 +320,11 @@ class _TokenMeter(BaseCallbackHandler):
 
     # Chat models fire on_chat_model_start; plain LLMs fire on_llm_start.
     def on_chat_model_start(self, serialized: Any, messages: Any, **kwargs: Any) -> None:
+        self._remember_model(kwargs)
         self._check_before_call()
 
     def on_llm_start(self, serialized: Any, prompts: Any, **kwargs: Any) -> None:
+        self._remember_model(kwargs)
         self._check_before_call()
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
@@ -299,7 +349,9 @@ class _TokenMeter(BaseCallbackHandler):
                 pass
         self.input_tokens += in_tok
         self.output_tokens += out_tok
-        self.max_call_usd = max(self.max_call_usd, _price(self.rates, in_tok, out_tok))
+        call_usd = _price(self._rates_for_call(kwargs.get("run_id"), response), in_tok, out_tok)
+        self._spent_usd += call_usd
+        self.max_call_usd = max(self.max_call_usd, call_usd)
         if self.cap is not None and self.total >= self.cap:
             raise TokenCapExceeded(f"token cap {self.cap} exceeded ({self.total})")
         if self.usd_limit is not None and self.spent_usd > self.usd_limit:
@@ -473,13 +525,12 @@ def _build_config(config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _run_rates(auth_kind: str, merged: Dict[str, Any]) -> Optional[Dict[str, float]]:
-    """Per-1M rates used to price THIS run, both mid-run and at finalize.
+    """Fallback per-1M rates for THIS run: the higher of deep and quick.
 
-    The meter only sees token totals, not which model made each call, so we
-    price every token at the higher of the deep and quick rates (input and
-    output separately). That is conservative, and because the mid-run stop
-    and the finalized ledger cost use these same rates, the stop decision
-    matches what gets recorded. Unknown models resolve to a family ceiling
+    The meter prices each call at its own model (``_run_rate_for``); these
+    rates are used only for a call whose model the callback could not
+    identify, and to size the per-call overshoot guard before any call has
+    run. Conservative on purpose. Unknown models resolve to a family ceiling
     via ``per_token_rates``, never $0. OAuth (subscription) and local runs
     return None ($0).
 
@@ -503,10 +554,24 @@ def _run_rates(auth_kind: str, merged: Dict[str, Any]) -> Optional[Dict[str, flo
         return None
 
 
+def _run_rate_for(auth_kind: str, merged: Dict[str, Any]):
+    """Per-model rate resolver for the meter, or None for a free run."""
+    if auth_kind in ("oauth", "local"):
+        return None
+    try:
+        from .llm_providers import per_token_rates
+    except Exception:  # noqa: BLE001
+        return None
+    provider = (merged.get("llm_provider") or "").lower() or None
+    return lambda model: per_token_rates(model, provider)
+
+
 def _run_cost(auth_kind: str, merged: Dict[str, Any], meter: "_TokenMeter") -> float:
-    """USD for the metered run, at ``_run_rates`` (the same rates the meter
-    uses for its mid-run stop)."""
-    return _price(_run_rates(auth_kind, merged), meter.input_tokens, meter.output_tokens)
+    """USD for the metered run: the meter's call-by-call total, the same
+    number its mid-run stop acts on. OAuth/local runs are always $0."""
+    if auth_kind in ("oauth", "local"):
+        return 0.0
+    return meter.spent_usd
 
 
 def _finalize_reservation(
@@ -597,7 +662,30 @@ async def full_debate(
     completed = False
     free = auth_kind in ("oauth", "local")
 
+    def _refresh_limit() -> None:
+        """After each node: tell Cost Guard what this run has really used and
+        pick up the current cap headroom (another run may have started or
+        finished meanwhile). See cost_guard.refresh_run_limit."""
+        if not reservation_id or meter.usd_limit is None:
+            return
+        try:
+            from . import cost_guard as _cg
+
+            fresh = _cg.refresh_run_limit(
+                reservation_id,
+                spent_usd=meter.spent_usd,
+                next_call_usd=meter.max_call_usd,
+            )
+        except Exception:  # noqa: BLE001 — never fail the run over a refresh
+            return
+        # Only ever tighten: if another run used room since our reserve, we
+        # get less; if room freed up, we keep the limit we started with
+        # (simple and conservative, the run was sized for that limit).
+        if fresh is not None and meter.usd_limit is not None:
+            meter.usd_limit = min(meter.usd_limit, fresh)
+
     def _cost_event() -> Dict[str, Any]:
+        _refresh_limit()
         return {
             "type": "cost.usage",
             "input_tokens": meter.input_tokens,
@@ -636,6 +724,7 @@ async def full_debate(
         # Price the meter now that the deep/quick models are known. Same rates
         # as _run_cost, so the mid-run stop agrees with the finalized cost.
         meter.rates = _run_rates(auth_kind, merged)
+        meter.rate_for = _run_rate_for(auth_kind, merged)
         meter.usd_limit = usd_limit if meter.rates else None
 
         # Data-tool key (Alpha Vantage) must be in the environment for the WHOLE
@@ -871,7 +960,6 @@ async def full_debate(
         except Exception:
             pass  # memory is best-effort; never fail the run over it
 
-        completed = True
         yield {
             "type": "session.complete",
             "ticker": ticker,
@@ -890,6 +978,12 @@ async def full_debate(
             "output_tokens": meter.output_tokens,
             "estimated_cost_usd": round(_run_cost(auth_kind, merged, meter), 4),
         }
+        # Only reached once the consumer asked for the NEXT event, i.e. after
+        # the server sent and captured session.complete. If the user closes
+        # the window during the yield (WebSocket disconnect), the generator is
+        # closed at the yield, this line never runs, and the reservation is
+        # finalized as unrecorded so the paid run still counts toward the caps.
+        completed = True
     finally:
         _finalize_reservation(
             reservation_id, auth_kind, merged, meter, completed=completed

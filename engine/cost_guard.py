@@ -876,6 +876,111 @@ def run_usd_limit(reservation_id: Optional[str]) -> Optional[RunLimit]:
     )
 
 
+def refresh_run_limit(
+    reservation_id: Optional[str],
+    *,
+    spent_usd: float,
+    next_call_usd: float,
+) -> Optional[float]:
+    """Keep a running Pro reservation honest while it runs; return its
+    current USD limit (None: leave the limit unchanged).
+
+    Called by the Pro engine after each graph node. Two jobs:
+
+    1. Raise this reservation's `est_cost_usd` to at least what the run has
+       already spent plus one more call. Without this, a second run started
+       meanwhile sees only our pre-run estimate and could take headroom we
+       are already using (two runs could then overshoot a cap together).
+    2. For a "cap" reservation, recompute the headroom LIVE: the smallest
+       (cap - spend of everything else) across enabled USD caps. Another run
+       that started or finished since our reserve changes our room. Runaway
+       limits (override, caps off) are fixed and returned unchanged.
+
+    Granularity is one node: calls inside a node (an analyst's tool loop)
+    use the limit from the last refresh. Best-effort: on any DB error the
+    caller keeps its current limit.
+    """
+    if not reservation_id:
+        return None
+    try:
+        initialize()
+        with _connect() as conn:
+            conn.execute(
+                """
+                UPDATE cost_reservations
+                SET est_cost_usd = MAX(est_cost_usd, ?)
+                WHERE id = ? AND finalized = 0
+                """,
+                (max(0.0, float(spent_usd) + float(next_call_usd)), reservation_id),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT est_cost_usd, usd_limit, limit_reason, finalized, expires_at "
+                "FROM cost_reservations WHERE id = ?",
+                (reservation_id,),
+            ).fetchone()
+            if row is None or row["usd_limit"] is None:
+                return None
+            if str(row["limit_reason"] or "") != "cap":
+                return float(row["usd_limit"])
+            config = _row_to_config(
+                conn.execute("SELECT * FROM cost_guard_config WHERE id = 1").fetchone()
+            )
+            spend = _compute_spend(conn)
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(
+            f"[cost_guard] refresh_run_limit failed for {reservation_id}: "
+            f"{type(exc).__name__}: {exc}\n"
+        )
+        return None
+    # `spend` counts our own live reservation; take it out so the result is
+    # the room left for THIS run. (A swept or finalized row is not in spend.)
+    own = (
+        float(row["est_cost_usd"])
+        if not row["finalized"] and str(row["expires_at"]) > _iso(_utcnow())
+        else 0.0
+    )
+    headrooms = [
+        cap - (used - own)
+        for cap, used in (
+            (config.cap_daily_usd, spend.daily_usd),
+            (config.cap_weekly_usd, spend.weekly_usd),
+            (config.cap_monthly_usd, spend.monthly_usd),
+        )
+        if cap > 0
+    ]
+    if not config.enabled or not headrooms:
+        # Caps were switched off mid-run: keep the limit set at reserve time.
+        return float(row["usd_limit"])
+    return max(0.0, min(headrooms))
+
+
+def mark_unrecorded(reservation_id: Optional[str]) -> bool:
+    """Flag a finalized reservation as carrying the run's only cost record.
+
+    Used when a run completed but its sessions row could not be written:
+    without this the reservation (finalized as recorded) and the missing row
+    would together count the paid run as $0 against every cap.
+    """
+    if not reservation_id:
+        return False
+    try:
+        initialize()
+        with _connect() as conn:
+            cur = conn.execute(
+                "UPDATE cost_reservations SET unrecorded = 1 WHERE id = ?",
+                (reservation_id,),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(
+            f"[cost_guard] mark_unrecorded failed for {reservation_id}: "
+            f"{type(exc).__name__}: {exc}\n"
+        )
+        return False
+
+
 def finalize_reservation(
     reservation_id: str,
     *,
@@ -927,7 +1032,13 @@ def _add_missing_reservation_columns(conn: sqlite3.Connection) -> None:
     have = {r[1] for r in conn.execute("PRAGMA table_info(cost_reservations)").fetchall()}
     for name, decl in _RESERVATION_ADDED_COLUMNS:
         if name not in have:
-            conn.execute(f"ALTER TABLE cost_reservations ADD COLUMN {name} {decl}")
+            try:
+                conn.execute(f"ALTER TABLE cost_reservations ADD COLUMN {name} {decl}")
+            except sqlite3.OperationalError as exc:
+                # Two threads migrating the same old database at once: the
+                # loser sees "duplicate column", which means the work is done.
+                if "duplicate column" not in str(exc).lower():
+                    raise
 
 
 def _run_limit(

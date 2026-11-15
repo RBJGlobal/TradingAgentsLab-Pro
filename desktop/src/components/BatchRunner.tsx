@@ -137,7 +137,18 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
       let estCostUsd: number | undefined;
       let perError: string | undefined;
 
+      // A run that ended without session.complete (stopped by Cost Guard,
+      // the token cap, or a node error) must show as failed, not "done".
+      let stoppedByCostCap = false;
       const onEvent = (event: DebateEvent) => {
+        if (event.type === 'run.cost_cap') {
+          perError = event.message || 'Stopped by Cost Guard';
+          stoppedByCostCap = event.reason === 'cap';
+        } else if (event.type === 'run.token_cap') {
+          perError = 'Stopped at the token cap';
+        } else if (event.type === 'run.error') {
+          perError = event.error || 'Analysis failed';
+        }
         if (event.type === 'session.complete') {
           decisionStance = normalizeStance(event.decision.stance);
           decisionConviction = event.decision.conviction;
@@ -201,6 +212,14 @@ function BatchRunner({ tickers }: BatchRunnerProps) {
                 : r,
             ),
           );
+          if (stoppedByCostCap) {
+            // The cap is reached: every later ticker would be stopped too.
+            setBatchError(
+              `Cost guard stopped ${ticker} at your cap. Adjust caps in Settings to continue.`,
+            );
+            setPhase('cancelled');
+            return;
+          }
         } else {
           setRows((prev) =>
             prev.map((r, idx) =>

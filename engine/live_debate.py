@@ -740,8 +740,13 @@ async def live_debate(
                         provider=config.provider,
                     )
                 )
+                # A run that never yielded session.complete (error, client
+                # disconnect) writes no sessions row: settle it as unrecorded
+                # so its partial cost still counts toward the caps.
                 _cost_guard.finalize_reservation(
-                    reservation_id, actual_cost_usd=final_cost
+                    reservation_id,
+                    actual_cost_usd=final_cost,
+                    unrecorded=not yielded_complete,
                 )
             except Exception as exc:  # noqa: BLE001 — finalize is best-effort
                 sys.stderr.write(

@@ -258,7 +258,7 @@ New databases are seeded with a $5.00 daily, $15.00 weekly and $45.00 monthly ca
 
 Without `pro`, the estimate is the simplified debate's worst case (12 agents at `max_tokens`). With `pro`, it is the Pro full-graph estimate (`cost_guard.pro_reservation_estimate`): per-node token budgets calibrated to about 1.4x a measured default run, the research manager and portfolio manager priced at `deep_think_llm` and every other node at `quick_think_llm`, input growing with each extra debate or risk round, billed output scaled 2.5x for models that think by default, plus the post-graph thesis-scoring call. Missing or empty `selected_analysts` means all four. The WebSocket auto-reserve builds the same `pro` block from the start frame's `pro_config`, so both paths give the same number for the same run.
 
-Every per-token model is priced, never $0: an exact rate row, then the row for a dated id (`claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` row), then an OpenRouter price learned at runtime, then the vendor's own row for an OpenRouter id, then a family ceiling (for example $15 / $75 per million tokens for an unrecognised Claude or an unknown vendor). OAuth and local runs are $0.
+Every per-token model is priced, never $0: an exact rate row, then the row for a dated id (`claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` row), then an OpenRouter price learned at runtime (not yet loaded by the Pro app), then the vendor's own row for an OpenRouter id, then a family ceiling (for example $15 / $75 per million tokens for an unrecognised Claude or an unknown vendor). OAuth and local runs are $0.
 
 `check` returns `{allow, over_dimension, override_available, current, config, est_reservation_usd}`. `reserve` returns:
 

@@ -315,7 +315,7 @@ async def test_reservation_finalized_at_zero_on_oauth(monkeypatch, tmp_db):
 
     finalize_calls: list[tuple] = []
 
-    def capture(reservation_id, *, actual_cost_usd):
+    def capture(reservation_id, *, actual_cost_usd, unrecorded=False):
         finalize_calls.append((reservation_id, actual_cost_usd))
         return True
 

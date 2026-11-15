@@ -792,6 +792,27 @@ def build_app(*, token: str) -> FastAPI:
                     # for a normal run, 3x the estimate for an override run,
                     # nothing for OAuth. None means the meter only counts.
                     run_limit = cost_guard.run_usd_limit(reservation_id)
+                    if run_limit is None and config.auth_kind not in ("oauth", "local"):
+                        # Fail closed: a per-token run whose limit could not be
+                        # read (DB error, unknown or stale reservation id) still
+                        # gets the runaway stop at 3x a fresh estimate, instead
+                        # of running with no USD stop at all.
+                        try:
+                            fallback_est = cost_guard.estimate_for_request(
+                                model=reserve_model,
+                                auth_kind=config.auth_kind,
+                                max_tokens=config.max_tokens,
+                                provider=config.provider,
+                                pro=reserve_pro,
+                            )
+                            run_limit = cost_guard.RunLimit(
+                                limit_usd=fallback_est * cost_guard.RUNAWAY_MULTIPLIER,
+                                reason="runaway",
+                                dimension=None,
+                                est_cost_usd=fallback_est,
+                            )
+                        except Exception:  # noqa: BLE001
+                            run_limit = None
                     debate_events = full_debate(
                         ticker,
                         trade_date,
@@ -857,6 +878,12 @@ def build_app(*, token: str) -> FastAPI:
                 trade_date=trade_date,
                 events=captured_events,
             )
+            # A paid run whose History row could not be written has no
+            # sessions row to carry its cost, and its reservation was settled
+            # as recorded. Flag the reservation so the run still counts toward
+            # the caps. (No-op for stub runs, which have no reservation.)
+            if session_id is None and reservation_id:
+                cost_guard.mark_unrecorded(reservation_id)
 
             # Phase 8a — fire webhooks. After persist (so we have a session_id)
             # and before ws.close(1000) (so the renderer is still listening for
