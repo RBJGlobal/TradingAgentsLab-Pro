@@ -21,7 +21,7 @@ The four cap dimensions:
 
 A cap of `0` means **disabled**. You can enable any subset, e.g. monthly USD only, or sessions-per-day only.
 
-> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. If you already had Cost Guard set up, your caps are kept as they were. A Pro analysis with all four analysts on Claude Sonnet 4.6 is estimated at about $1.31, so an older $1.00 daily cap will block it and offer the override: raise the daily cap in Settings if that happens. A market-only analysis (the setting a new install starts with) is estimated at about $0.75.
+> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. Updating from an earlier version: if your caps were still the old defaults ($1.00 a day, $5.00 a week, $15.00 a month, never changed), they are raised once to the new defaults, because a Pro analysis with all four analysts on Claude Sonnet 4.6 is estimated at about $1.31 and would not fit a $1.00 daily cap. Caps you set yourself are kept as they were. A market-only analysis (the setting a new install starts with) is estimated at about $0.75.
 
 ---
 

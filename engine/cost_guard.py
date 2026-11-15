@@ -119,7 +119,11 @@ CREATE TABLE IF NOT EXISTS cost_guard_config (
     cap_weekly_usd REAL NOT NULL DEFAULT 15.00,
     cap_monthly_usd REAL NOT NULL DEFAULT 45.00,
     cap_sessions_per_day INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    -- 1 = this config already uses the Pro 1.1.8 defaults ($5/$15/$45) or
+    -- was checked by the one-time upgrade below. Older databases get the
+    -- column with 0 via ALTER TABLE and are upgraded once.
+    defaults_rev INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS cost_reservations (
@@ -150,7 +154,8 @@ INSERT OR IGNORE INTO cost_guard_config (
 # Pro defaults ($5 / $15 / $45) set 2026-11-14 (founder decision): one default
 # Pro run on Claude Sonnet 4.6 really cost $0.93, so the old $1 daily cap
 # could not fit even one run. INSERT OR IGNORE means this only seeds NEW
-# databases; existing users keep the caps they already have.
+# databases. Existing databases still at the old $1/$5/$15 defaults are
+# raised once by _upgrade_untouched_default_caps; custom caps are kept.
 
 # Columns added to cost_reservations after the first release. CREATE TABLE IF
 # NOT EXISTS never alters an existing table, so `initialize()` adds any that
@@ -666,6 +671,7 @@ def initialize() -> None:
         conn.executescript(_SCHEMA_DDL)
         _add_missing_reservation_columns(conn)
         conn.execute(_SEED_CONFIG_SQL, (_iso(_utcnow()),))
+        _upgrade_untouched_default_caps(conn)
         # Sweep any reservations that expired while the engine was down.
         _sweep_expired_reservations(conn)
         conn.commit()
@@ -1039,6 +1045,45 @@ def _add_missing_reservation_columns(conn: sqlite3.Connection) -> None:
                 # loser sees "duplicate column", which means the work is done.
                 if "duplicate column" not in str(exc).lower():
                     raise
+
+
+# The caps every Pro install got before 1.1.8, and the ones that replace
+# them. A full Pro analysis costs about $1 on Sonnet, so the old $1 a day
+# blocked nearly every run and taught users to press Override (which turns
+# the stop-at-cap protection off). Founder decision 2026-11-14.
+_OLD_DEFAULT_CAPS = (1.00, 5.00, 15.00)
+_NEW_DEFAULT_CAPS = (5.00, 15.00, 45.00)
+
+
+def _upgrade_untouched_default_caps(conn: sqlite3.Connection) -> None:
+    """One time per database: caps still at exactly the old defaults (never
+    edited) move to the new defaults. Caps the user set themselves are left
+    alone. Runs once: afterwards defaults_rev = 1, so a user who later sets
+    $1/$5/$15 on purpose keeps it."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(cost_guard_config)").fetchall()}
+    if "defaults_rev" not in have:
+        try:
+            conn.execute(
+                "ALTER TABLE cost_guard_config ADD COLUMN defaults_rev INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc).lower():
+                raise
+    row = conn.execute(
+        "SELECT cap_daily_usd, cap_weekly_usd, cap_monthly_usd, defaults_rev "
+        "FROM cost_guard_config WHERE id = 1"
+    ).fetchone()
+    if row is None or int(row[3]) >= 1:
+        return
+    caps = tuple(round(float(v), 2) for v in row[:3])
+    if caps == _OLD_DEFAULT_CAPS:
+        conn.execute(
+            "UPDATE cost_guard_config SET cap_daily_usd = ?, cap_weekly_usd = ?, "
+            "cap_monthly_usd = ?, updated_at = ?, defaults_rev = 1 WHERE id = 1",
+            (*_NEW_DEFAULT_CAPS, _iso(_utcnow())),
+        )
+    else:
+        conn.execute("UPDATE cost_guard_config SET defaults_rev = 1 WHERE id = 1")
 
 
 def _run_limit(

@@ -303,28 +303,54 @@ INSERT INTO cost_reservations VALUES ('old-1', '2026-07-01T00:00:00Z',
 """
 
 
-def test_existing_db_keeps_its_caps_and_gains_the_new_columns(tmp_db):
+def test_existing_db_with_untouched_old_defaults_is_upgraded_once(tmp_db):
+    """Founder decision 2026-11-14: caps still at exactly the old $1/$5/$15
+    defaults move to $5/$15/$45 on update; the new columns are added."""
     tmp_db.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(str(tmp_db)) as conn:
         conn.executescript(_OLD_SCHEMA)
         conn.commit()
     cost_guard.initialize()
     c = cost_guard.get_config()
-    assert (c.cap_daily_usd, c.cap_weekly_usd, c.cap_monthly_usd) == (1.0, 5.0, 15.0)
+    assert (c.cap_daily_usd, c.cap_weekly_usd, c.cap_monthly_usd) == (5.0, 15.0, 45.0)
     with sqlite3.connect(str(tmp_db)) as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(cost_reservations)")}
         old = conn.execute("SELECT unrecorded, usd_limit FROM cost_reservations "
                            "WHERE id='old-1'").fetchone()
     assert {"unrecorded", "usd_limit", "limit_reason", "limit_dimension"} <= cols
     assert old == (0, None)  # pre-existing rows are not counted as aborted
-    # The new code path works on the migrated DB. Note a default Sonnet 4.6 Pro
-    # run (~$1.31) no longer fits an old $1.00 daily cap: it is blocked and
-    # offered the Override, which then gets the 3x runaway stop.
+    # A default Sonnet 4.6 Pro run (~$1.31) now fits and gets the cap stop.
+    r = cost_guard.reserve(model=SONNET, auth_kind="api_key", max_tokens=400, pro=_pro())
+    assert r.limit_reason == "cap"
+    # One time only: a user who later sets $1/$5/$15 on purpose keeps it.
+    cost_guard.update_config(cap_daily_usd=1.0, cap_weekly_usd=5.0, cap_monthly_usd=15.0)
+    cost_guard.initialize()
+    c = cost_guard.get_config()
+    assert (c.cap_daily_usd, c.cap_weekly_usd, c.cap_monthly_usd) == (1.0, 5.0, 15.0)
+
+
+def test_existing_db_with_custom_caps_keeps_them(tmp_db):
+    tmp_db.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(tmp_db)) as conn:
+        conn.executescript(_OLD_SCHEMA.replace(
+            "VALUES (1, 1, 1.00, 5.00, 15.00, 0,", "VALUES (1, 1, 2.00, 5.00, 15.00, 0,"))
+        conn.commit()
+    cost_guard.initialize()
+    c = cost_guard.get_config()
+    assert (c.cap_daily_usd, c.cap_weekly_usd, c.cap_monthly_usd) == (2.0, 5.0, 15.0)
+    # The user's own $2 cap still applies: one ~$1.31 run fits, a second
+    # identical run would cross it and is blocked.
+    cost_guard.reserve(model=SONNET, auth_kind="api_key", max_tokens=400, pro=_pro())
     with pytest.raises(cost_guard.CostGuardBlocked):
         cost_guard.reserve(model=SONNET, auth_kind="api_key", max_tokens=400, pro=_pro())
-    r = cost_guard.reserve(model=SONNET, auth_kind="api_key", max_tokens=400,
-                           override=True, pro=_pro())
-    assert r.limit_reason == "runaway"
+
+
+def test_fresh_db_is_not_touched_by_the_upgrade(tmp_db):
+    cost_guard.initialize()
+    cost_guard.update_config(cap_daily_usd=1.0, cap_weekly_usd=5.0, cap_monthly_usd=15.0)
+    cost_guard.initialize()
+    c = cost_guard.get_config()
+    assert (c.cap_daily_usd, c.cap_weekly_usd, c.cap_monthly_usd) == (1.0, 5.0, 15.0)
 
 
 # ---- Meter: halts before the limit, overshoot at most one call --------------
