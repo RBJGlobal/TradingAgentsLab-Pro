@@ -122,6 +122,8 @@ interface UpdatesStateBridge {
   autoUpdate: boolean;
   currentVersion: string;
   supported: boolean;
+  /** True when the updater privacy hardening did not hold: every check is refused. */
+  checksUnavailable?: boolean;
 }
 
 interface UpdatesStatusBridge {
@@ -133,7 +135,8 @@ interface UpdatesStatusBridge {
     | 'downloading'
     | 'downloaded'
     | 'error'
-    | 'dev';
+    | 'dev'
+    | 'unavailable';
   version?: string;
   percent?: number;
   message?: string;
