@@ -44,7 +44,7 @@ A built-in Cost Guard reserves against your configured daily, weekly, and monthl
 
 ## Privacy: zero data collection
 
-No analytics, no telemetry, no error reporting, no accounts, no install pings. The renderer talks only to a local engine on `127.0.0.1`. Outbound calls go exclusively to the providers you configure. Transcripts and history are stored locally on your machine.
+No analytics, no telemetry, no error reporting, no accounts, no install pings. The renderer talks only to a local engine on `127.0.0.1`. Outbound calls go exclusively to the providers you configure, plus an optional update check. Update checks: Trading Agents Lab Pro asks GitHub whether a newer version exists. The request carries no ID for you or your install, and it does not send the version you have. Like any web request it reaches GitHub from your IP address and carries your system language. When an update is downloaded, the download can name the version you have now. Transcripts and history are stored locally on your machine.
 
 ## Developing
 
