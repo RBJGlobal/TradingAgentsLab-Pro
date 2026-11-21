@@ -41,7 +41,7 @@ from .data_providers import (
     provider_from_data_config,
 )
 from .live_debate import ProviderConfig, SentimentBlock, live_debate
-from .llm_providers import adapter_for
+from .llm_providers import ReasoningBudgetExhausted, adapter_for
 from . import cost_guard, local_llm_detect, sentiment_sources, storage
 from . import webhooks as webhook_dispatcher
 from .stub_debate import canned_debate
@@ -261,9 +261,15 @@ def build_app(*, token: str) -> FastAPI:
     async def llm_test(req: LLMTestRequest) -> dict[str, Any]:
         """Validate stored LLM credentials with a 1-token completion.
 
-        Explicit-trigger only (Settings → "Test connection" per row).
-        Under ~$0.0001 per test for API-key providers; skips CostGuard
-        entirely because this is a credential ping, not a debate.
+        Explicit-trigger only (Settings → "Test connection" per row). Skips
+        CostGuard because this is a credential ping, not a debate. Cost: a
+        fraction of a cent for most models. A reasoning model gets the
+        thinking allowance on top of the 1-token budget (up to 1,201 output
+        tokens), so one test can cost up to about 1,200 output tokens at that
+        model's rate (e.g. about $0.06 at a $50 per 1M output price).
+        A reasoning model that spends the whole budget thinking raises
+        ReasoningBudgetExhausted; that still proves the key and model work
+        (the provider accepted and billed the request), so it is a pass.
 
         OAuth credentials live in the Electron main process and never
         reach the renderer, so OAuth is rejected here on principle;
@@ -291,6 +297,11 @@ def build_app(*, token: str) -> FastAPI:
             )
             elapsed_ms = int((time.monotonic() - started) * 1000)
             return {"ok": True, "model": config.model, "ms": elapsed_ms}
+        except ReasoningBudgetExhausted:
+            # The model answered with only reasoning: credentials and model
+            # are fine, which is all this endpoint checks.
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return {"ok": True, "model": config.model, "ms": elapsed_ms}
         except Exception as exc:  # noqa: BLE001 — surface whatever blew up
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         finally:
@@ -311,20 +322,67 @@ def build_app(*, token: str) -> FastAPI:
 
     @app.post("/llm/models", dependencies=bearer)
     async def llm_models(req: LLMModelsRequest) -> dict[str, Any]:
-        """Models the user's ChatGPT account can use on the OAuth (Codex) path.
+        """Models the user can pick for the configured provider, live.
 
-        Live from OpenAI's Codex catalog (see engine/codex_models.py), so the
-        Analyze picker tracks OpenAI's retirements without an app release.
-        Falls back to a small built-in list when the catalog is unreachable;
-        `source` tells the renderer which one it got. OAuth credentials arrive
-        per request (the renderer already sends them for live runs) and are
-        never persisted by the engine.
+        Two paths, same response shape
+        (`{ok, source: "live"|"fallback", default, models, error?}`):
+
+        - API key (any provider): the provider's own model list, via
+          engine/provider_models.py. Falls back to the built-in list for that
+          provider when the list can't be fetched. `default` is the engine's
+          provider default (unchanged by discovery, so no user's cost moves).
+        - OpenAI OAuth: OpenAI's Codex catalog for this ChatGPT account (see
+          engine/codex_models.py), so the picker tracks OpenAI's retirements
+          without an app release.
+
+        Credentials arrive per request (the renderer already sends them for
+        live runs) and are never persisted by the engine. The engine calls
+        only the provider named in this request.
         """
         from . import codex_models
 
         config = ProviderConfig.from_dict(req.provider_config)
+        if config is not None and config.auth_kind == "api_key":
+            from . import provider_models
+            from .llm_providers import default_model_for
+
+            try:
+                choices = await provider_models.list_provider_models(
+                    config.provider,
+                    str(config.auth.get("api_key") or ""),
+                    force_refresh=req.refresh,
+                )
+            except Exception as exc:  # noqa: BLE001 — discovery must never 500
+                # Any failure (including a parser bug on an unexpected
+                # catalog, or a key with characters an HTTP header can't
+                # carry) answers with the built-in list. A 500 here would make
+                # the renderer retry six more times, i.e. seven provider calls.
+                # Expected failures carry a safe message; anything else is
+                # reported by TYPE only, since its text could include request
+                # details.
+                if isinstance(exc, provider_models.ProviderModelsUnavailable):
+                    reason = str(exc)
+                else:
+                    reason = f"unexpected error: {type(exc).__name__}"
+                    sys.stderr.write(f"[provider-models] {config.provider} {reason}\n")
+                return {
+                    "ok": True,
+                    "source": "fallback",
+                    "default": default_model_for(config.provider),
+                    "models": provider_models.static_models(config.provider),
+                    "error": reason,
+                }
+            return {
+                "ok": True,
+                "source": (
+                    "live" if config.provider in provider_models.DISCOVERABLE
+                    else "fallback"
+                ),
+                "default": default_model_for(config.provider),
+                "models": choices,
+            }
         if config is None or config.provider != "openai" or config.auth_kind != "oauth":
-            return {"ok": False, "error": "model discovery is only for OpenAI OAuth"}
+            return {"ok": False, "error": "model discovery needs an API key or OpenAI OAuth"}
         try:
             models = await codex_models.list_codex_models(
                 config.bearer_token,
@@ -740,6 +798,24 @@ def build_app(*, token: str) -> FastAPI:
                 # and close — renderer can surface this as a "configure caps
                 # in Settings" hint.
                 if not reservation_id:
+                    if config.auth_kind == "api_key":
+                        from . import provider_models
+
+                        # OpenRouter catalog prices before reserving (the Pro
+                        # estimate prices deep and quick separately); ceiling
+                        # on any failure. See prime_openrouter_rates.
+                        prime_ids = {reserve_model, config.model}
+                        if reserve_pro:
+                            prime_ids |= {
+                                reserve_pro.get("deep_think_llm") or "",
+                                reserve_pro.get("quick_think_llm") or "",
+                            }
+                        for mid in sorted(i for i in prime_ids if i):
+                            await provider_models.prime_openrouter_rates(
+                                config.provider,
+                                mid,
+                                str(config.auth.get("api_key") or ""),
+                            )
                     try:
                         auto = cost_guard.reserve(
                             model=reserve_model,
@@ -1147,8 +1223,8 @@ CostGuardReserveRequest.model_rebuild()
 
 
 class LLMModelsRequest(BaseModel):
-    """OAuth provider_config for Codex model discovery. `refresh` bypasses
-    the engine's 15-minute per-account catalog cache."""
+    """provider_config (API key, or OpenAI OAuth) for live model discovery.
+    `refresh` bypasses the engine's 15-minute catalog cache."""
 
     provider_config: dict[str, Any]
     refresh: bool = False

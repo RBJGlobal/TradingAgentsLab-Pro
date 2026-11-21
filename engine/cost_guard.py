@@ -100,6 +100,7 @@ from .llm_providers import (
     openai_reasoning_effort,
     openrouter_is_reasoning_model,
     per_token_rates,
+    thinking_allowance,
 )
 from .live_debate import MAX_AGENTS_PER_SESSION
 
@@ -301,17 +302,26 @@ def worst_case_reservation(
     Assumes all 12 agents max out their output cap (the expensive direction)
     AND the input transcript grows triangularly across agents (later agents
     see all prior turns).
+
+    A reasoning model's request allows max_tokens + the thinking allowance
+    (``llm_providers.thinking_allowance``, the same function the adapters
+    use to size the request, so the two cannot drift), all billed as output.
     """
     if auth_kind in ("oauth", "local"):
         return 0.0
     rates = per_token_rates(model, provider)
     n = MAX_AGENTS_PER_SESSION
-    # Output: every agent maxes its budget. (Worst case.)
-    max_out_tokens = n * max_tokens
+    allowance = thinking_allowance(provider or infer_provider(model), model)
+    per_agent_out = max_tokens + allowance
+    # Output: every agent maxes its budget, allowance included. (Worst case.)
+    max_out_tokens = n * per_agent_out
     # Input: per-agent ~600 tokens of fixed context, plus prior turns.
     # Sum over agents 0..n-1 of prior agents' output: 0+1+2+…+(n-1) = n*(n-1)/2.
+    # The growth uses the FULL per-agent output limit: the provider doesn't
+    # split it between thinking and answer, so a model that thinks little can
+    # return all of it as visible text, replayed to every later agent.
     fixed_input_per_agent = 600
-    growth_input_tokens = (n * (n - 1) // 2) * max_tokens
+    growth_input_tokens = (n * (n - 1) // 2) * per_agent_out
     max_in_tokens = n * fixed_input_per_agent + growth_input_tokens
     return (max_in_tokens * rates["input"] + max_out_tokens * rates["output"]) / 1_000_000
 
