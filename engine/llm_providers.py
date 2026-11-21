@@ -64,15 +64,15 @@ _COST_PER_M_TOKENS: dict[str, dict[str, float]] = {
     "gpt-4-turbo":         {"input": 10.00, "output": 30.00},
     "gpt-4.1-mini":        {"input": 0.40, "output": 1.60},
     "gpt-4.1":             {"input": 2.00, "output": 8.00},
-    # gpt-5 family: conservative ceilings. Verified 2026-05-28 against OpenAI's
-    # published API pricing — gpt-5.5 is $5/$30 per 1M (shipped 2026-04-24), so
-    # our $10/$40 is a ~2x ceiling; gpt-5 and gpt-5-mini are likewise priced
-    # above their real rates. Over-estimating is the safe direction (CostGuard
-    # reserves more, stops sooner). Previously absent, so a gpt-5 run logged $0
-    # (the "unknown model" path) — these rows close that.
-    "gpt-5-mini":          {"input": 1.00, "output": 4.00},
-    "gpt-5":               {"input": 8.00, "output": 30.00},
-    "gpt-5.5":             {"input": 10.00, "output": 40.00},
+    # gpt-5 family: real list prices, refreshed 2026-11-20 from OpenRouter's
+    # public catalog, which bills OpenAI's own rates for openai/* ids
+    # (previously 2x to 8x ceilings, which over-reserved and could block a
+    # second run under the daily cap). Lookup is exact-id only: gpt-5-pro,
+    # gpt-5.5-pro and other premium tiers never match these rows and resolve
+    # to the premium ceiling in _family_ceiling.
+    "gpt-5-mini":          {"input": 0.25, "output": 2.00},
+    "gpt-5":               {"input": 1.25, "output": 10.00},
+    "gpt-5.5":             {"input": 5.00, "output": 30.00},
     # Anthropic first-party prices, refreshed 2026-11-11 from Anthropic's
     # models reference (as of 2026-11-03). Ids are the aliases; a DATED id the
     # API may return (e.g. claude-haiku-4-5-20251001) resolves to its alias
@@ -295,8 +295,7 @@ def estimate_cost(
     return (in_tokens * rates["input"] + out_tokens * rates["output"]) / 1_000_000
 
 
-
-
+# Pro-only: Cost Guard and the full-graph meter price api_key runs here.
 def per_token_rates(model: str, provider: Optional[str] = None) -> dict[str, float]:
     """Rates for a run that is KNOWN to be per-token billed (an api_key run).
 
@@ -312,178 +311,6 @@ def per_token_rates(model: str, provider: Optional[str] = None) -> dict[str, flo
         # first. Price it at the ceiling rather than $0 if one ever gets here.
         p = "unknown"
     return rates_for(model, p) or _CEIL_UNKNOWN
-
-
-# ---- Reasoning predicates (ported from the Lite app's engine) ------------
-#
-# Ported for PRICING ONLY: CostGuard's Pro estimator (cost_guard.py) uses these
-# to decide whether a model spends hidden thinking tokens, which bill as output.
-# Pro's LLM calls go through the upstream tradingagents clients, not adapters
-# here, so nothing below changes a request. Keep in sync with Lite's copy.
-
-
-def openai_is_classic_chat_model(model: str) -> bool:
-    """gpt-4o / gpt-4.1 / gpt-4-turbo / gpt-3.5 style: accept `temperature`
-    and `max_tokens`. The gpt-5 family and the o-series are reasoning models:
-    they reject a non-default temperature and reject `max_tokens` in favour of
-    `max_completion_tokens` (the pinned openai SDK documents `max_tokens` as
-    "not compatible with o-series models")."""
-    m = (model or "").strip().lower()
-    return m.startswith("gpt-4") or m.startswith("gpt-3.5")
-
-
-def openai_reasoning_effort(model: str) -> Optional[str]:
-    """Lowest `reasoning_effort` an OpenAI reasoning model accepts, or None
-    to leave the parameter out.
-
-    Why: reasoning models spend hidden reasoning tokens out of the SAME
-    `max_completion_tokens` budget as the visible answer. With our small
-    per-agent budget (400 by default) a model on its default ("medium")
-    effort can spend everything on reasoning and return no text at all.
-    Asking for the least reasoning keeps the budget for the answer.
-
-    Per the pinned openai SDK (2.36) docs for `reasoning_effort`:
-    - models before gpt-5.1 default to "medium" and do NOT support "none";
-      the gpt-5 family (gpt-5, -mini, -nano) has "minimal";
-    - gpt-5.1 supports "none" (its default). We send "none" for gpt-5.1 and
-      later too (gpt-5.2+, gpt-6+): an assumption, since the SDK docs only
-      name gpt-5.1. If a later model rejects it, the run fails loudly with
-      a 400 rather than quietly;
-    - the o-series predates "minimal", so it gets "low";
-    - gpt-5-pro supports only "high" (its default), and the "-chat" models
-      are not reasoning models: leave the parameter out for both.
-    """
-    m = (model or "").strip().lower()
-    if "-pro" in m or "chat" in m:
-        return None
-    if re.match(r"^o\d", m):
-        return "low"
-    version = re.match(r"^gpt-(\d+)(?:\.(\d+))?", m)
-    if not version:
-        return None
-    major, minor = int(version.group(1)), int(version.group(2) or 0)
-    if major < 5:
-        return None
-    if major == 5 and minor == 0:
-        return "minimal"
-    return "none"
-
-
-
-# OpenRouter reasoning capability learned from its /models catalog, keyed by
-# exact OpenRouter id, next to the price in _RUNTIME_RATES:
-# {"capable": bool, "efforts": [..], "mandatory": bool}. In memory only.
-_RUNTIME_REASONING: dict[str, dict[str, Any]] = {}
-
-# Lowest first. OpenRouter's documented effort values.
-_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh")
-
-
-def register_runtime_reasoning(
-    model: str, *, capable: bool, efforts: Optional[list[str]] = None, mandatory: bool = False
-) -> None:
-    """Record whether an OpenRouter model reasons (from its catalog entry)."""
-    _RUNTIME_REASONING[model] = {
-        "capable": bool(capable),
-        "efforts": [e for e in (efforts or []) if e in _EFFORT_ORDER],
-        "mandatory": bool(mandatory),
-    }
-
-
-def infer_provider(model: str) -> Optional[str]:
-    """Best guess of the provider from the model id alone, used when a caller
-    (an older renderer's /cost-guard/reserve) doesn't say. Mirrors the shape
-    rules `rates_for` uses."""
-    m = (model or "").strip().lower()
-    if "/" in m:
-        return "openrouter"
-    if m.startswith("claude-"):
-        return "anthropic"
-    if m.startswith("gpt-") or re.match(r"^o\d", m):
-        return "openai"
-    if m.startswith("gemini-"):
-        return "gemini"
-    if m.startswith("grok-"):
-        return "xai"
-    return None
-
-
-def anthropic_thinks_by_default(model: str) -> bool:
-    """Claude models that think when `thinking` is omitted.
-
-    Opus 5 / 5.5, Sonnet 5 / 5.5, Haiku 5.5, and every Fable and Mythos model.
-    Opus 4.8 / 4.7 / 4.6, Sonnet 4.6 / 4.5 and Haiku 4.5 (and older) answer
-    without thinking. Any opus/sonnet/haiku with a major version of 5 or more
-    counts as thinking, so a future Claude defaults to the safe side
-    (room to think, and a reservation that covers it).
-    """
-    m = normalize_model_id(model).lower()
-    if m.startswith("claude-fable") or m.startswith("claude-mythos"):
-        return True
-    version = re.match(r"^claude-(?:opus|sonnet|haiku)-(\d+)", m)
-    return bool(version) and int(version.group(1)) >= 5
-
-
-def gemini_thinks_by_default(model: str) -> bool:
-    """Gemini 2.5 and 3.x think by default, inside max_output_tokens.
-
-    gemini-2.5-flash-lite is the exception: it does not think unless asked.
-    The floating aliases (gemini-flash-latest, gemini-pro-latest, ...) point
-    at the current 2.5 / 3.x models, so they follow the thinking rule.
-    """
-    m = (model or "").strip().lower()
-    if m.startswith("gemini-2.5-flash-lite"):
-        return False
-    if re.match(r"^gemini-(flash|pro|flash-lite)-latest$", m):
-        return True
-    return m.startswith("gemini-2.5") or bool(re.match(r"^gemini-[3-9]", m))
-
-
-def openai_is_reasoning_model(model: str) -> bool:
-    """OpenAI models that THINK on our requests: the gpt-5 line and the
-    o-series, plus -pro tiers (which only run at "high").
-
-    gpt-5.1 and later are sent reasoning_effort "none" (see
-    `openai_reasoning_effort`), which means no thinking, so they need no
-    extra room and don't count here."""
-    if openai_is_classic_chat_model(model):
-        return False
-    m = (model or "").strip().lower()
-    if "-pro" in m:
-        return True
-    effort = openai_reasoning_effort(model)
-    return effort is not None and effort != "none"
-
-
-def _openrouter_split(model: str) -> tuple[str, str]:
-    vendor, _, name = (model or "").partition("/")
-    return vendor.lower(), name.split(":", 1)[0]
-
-
-def openrouter_name_reasons(model: str) -> bool:
-    """Name rules for OpenRouter ids from the vendors we also support
-    first-party (used when the catalog is not loaded, or says nothing
-    useful). The same rules as the direct paths, applied to the part after
-    the slash. Anything else: False (the empty-answer guard still applies)."""
-    vendor, name = _openrouter_split(model)
-    if vendor == "openai":
-        return openai_is_reasoning_model(name)
-    if vendor == "anthropic":
-        return anthropic_thinks_by_default(name.replace(".", "-"))
-    if vendor == "google":
-        return gemini_thinks_by_default(name)
-    return False
-
-
-def openrouter_is_reasoning_model(model: str) -> bool:
-    # OpenAI on OpenRouter follows the direct OpenAI rules exactly, so the
-    # two paths can't disagree (e.g. gpt-5.1 at "none" thinks not at all).
-    if _openrouter_split(model)[0] == "openai":
-        return openrouter_name_reasons(model)
-    info = _RUNTIME_REASONING.get(model)
-    if info is not None:
-        return info["capable"]
-    return openrouter_name_reasons(model)
 
 
 # ---- Provider config ------------------------------------------------------
@@ -627,13 +454,23 @@ def _normalize_auth(raw: dict) -> Optional[dict[str, Any]]:
 
 
 _DEFAULT_MAX_TOKENS = 400
-_MAX_TOKENS_HARD_CAP = 800  # Defense in depth — caller can't blow past this.
+# Defense in depth: caller can't blow past this. It caps the per-agent
+# `max_tokens` the renderer asks for. For a reasoning model the provider
+# limit is max_tokens + THINKING_ALLOWANCE_TOKENS (see `thinking_allowance`),
+# and providers do not split that limit between thinking and answer: a model
+# that thinks little can return up to the whole total as VISIBLE text. So
+# this cap is NOT a bound on visible text for reasoning models; CostGuard
+# reserves for the full total on both output and transcript growth.
+_MAX_TOKENS_HARD_CAP = 800
 
 _DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-haiku-4-5",
     "openrouter": "openai/gpt-4o-mini",
-    "gemini": "gemini-2.0-flash",
+    # gemini-2.0-flash was retired by Google (404 "no longer available",
+    # checked with a real key 2026-11-20). 3.1 Flash-Lite is the GA
+    # cost-efficient model; its cost row above is a ceiling.
+    "gemini": "gemini-3.1-flash-lite",
     # xAI Grok and MiniMax are both OpenAI-compatible (API key only). The
     # default leans to a fast/cheap model so a misconfigured run isn't an
     # expensive surprise. See XaiAdapter / MiniMaxAdapter below.
@@ -653,6 +490,363 @@ _ALLOWED_PROVIDERS = frozenset(_DEFAULT_MODELS.keys())
 
 def default_model_for(provider: str) -> str:
     return _DEFAULT_MODELS.get(provider, _DEFAULT_MODELS["openai"])
+
+
+# ---- Sampling parameters per model family ---------------------------------
+#
+# Why this exists: we used to send `temperature=0.7` to every model. Newer
+# models reject sampling parameters outright (HTTP 400), so a model the user
+# picked from the live list would fail on the very first agent. The rule is
+# an ALLOWLIST of older families that still accept temperature; anything
+# unknown or new gets the provider's default sampling (we omit the param).
+# Omitting is always accepted; sending is what breaks.
+
+_TEMPERATURE = 0.7
+
+# Anthropic: per Anthropic's API reference, Opus 4.7 and later, Fable 5.x,
+# Sonnet 5 / 5.5 and Haiku 5.5 reject (or only accept the default) sampling
+# params. These older ids still accept temperature. Compared after
+# `normalize_model_id`, so dated snapshots (claude-haiku-4-5-20251001) match.
+_ANTHROPIC_TEMPERATURE_OK = frozenset({
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+    "claude-opus-4-1",
+    "claude-opus-4-0",
+    "claude-opus-4",
+    "claude-sonnet-4-0",
+    "claude-sonnet-4",
+})
+
+
+def anthropic_accepts_temperature(model: str) -> bool:
+    m = normalize_model_id(model).lower()
+    # The whole Claude 3 generation (claude-3-5-haiku, claude-3-7-sonnet...).
+    return m in _ANTHROPIC_TEMPERATURE_OK or m.startswith("claude-3-")
+
+
+def openai_is_classic_chat_model(model: str) -> bool:
+    """gpt-4o / gpt-4.1 / gpt-4-turbo / gpt-3.5 style: accept `temperature`
+    and `max_tokens`. The gpt-5 family and the o-series are reasoning models:
+    they reject a non-default temperature and reject `max_tokens` in favour of
+    `max_completion_tokens` (the pinned openai SDK documents `max_tokens` as
+    "not compatible with o-series models")."""
+    m = (model or "").strip().lower()
+    return m.startswith("gpt-4") or m.startswith("gpt-3.5")
+
+
+def openai_reasoning_effort(model: str) -> Optional[str]:
+    """Lowest `reasoning_effort` an OpenAI reasoning model accepts, or None
+    to leave the parameter out.
+
+    Why: reasoning models spend hidden reasoning tokens out of the SAME
+    `max_completion_tokens` budget as the visible answer. With our small
+    per-agent budget (400 by default) a model on its default ("medium")
+    effort can spend everything on reasoning and return no text at all.
+    Asking for the least reasoning keeps the budget for the answer.
+
+    Per the pinned openai SDK (2.36) docs for `reasoning_effort`:
+    - models before gpt-5.1 default to "medium" and do NOT support "none";
+      the gpt-5 family (gpt-5, -mini, -nano) has "minimal";
+    - gpt-5.1 supports "none" (its default). We send "none" for gpt-5.1 and
+      later too (gpt-5.2+, gpt-6+): an assumption, since the SDK docs only
+      name gpt-5.1. If a later model rejects it, the run fails loudly with
+      a 400 rather than quietly;
+    - the o-series predates "minimal", so it gets "low";
+    - gpt-5-pro supports only "high" (its default), and the "-chat" models
+      are not reasoning models: leave the parameter out for both.
+    """
+    m = (model or "").strip().lower()
+    if "-pro" in m or "chat" in m:
+        return None
+    if re.match(r"^o\d", m):
+        return "low"
+    version = re.match(r"^gpt-(\d+)(?:\.(\d+))?", m)
+    if not version:
+        return None
+    major, minor = int(version.group(1)), int(version.group(2) or 0)
+    if major < 5:
+        return None
+    if major == 5 and minor == 0:
+        return "minimal"
+    return "none"
+
+
+# ---- Thinking allowance (reasoning models) --------------------------------
+#
+# Why: reasoning ("thinking") models spend hidden reasoning tokens out of the
+# SAME output-token limit as the visible answer. With our small per-agent
+# answer budget (the renderer sends max_tokens=400) a reasoning model can
+# spend all of it thinking and return no text (we then raise
+# ReasoningBudgetExhausted). So reasoning models get an extra allowance on
+# top of the visible budget:
+#
+#     total output limit sent to the provider = max_tokens + allowance
+#
+# The allowance is added in the adapters, only for reasoning models. The
+# provider does not split the total between thinking and answer, so a model
+# that thinks little may return up to max_tokens + allowance of VISIBLE text
+# (the transcript is never truncated). The SAME function feeds CostGuard's
+# worst-case reservation, which therefore budgets the full total both as
+# output and as transcript growth, so request size and budget can't drift.
+# Reasoning tokens are billed as output, so they are reserved as output.
+
+THINKING_ALLOWANCE_TOKENS = 1200
+
+# Capability learned from OpenRouter's /models catalog during discovery,
+# keyed by exact OpenRouter id, next to the price in _RUNTIME_RATES:
+# {"capable": bool, "efforts": [..], "mandatory": bool}. In memory only.
+_RUNTIME_REASONING: dict[str, dict[str, Any]] = {}
+
+# Lowest first. OpenRouter's documented effort values.
+_EFFORT_ORDER = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def register_runtime_reasoning(
+    model: str, *, capable: bool, efforts: Optional[list[str]] = None, mandatory: bool = False
+) -> None:
+    """Record whether an OpenRouter model reasons (from its catalog entry)."""
+    _RUNTIME_REASONING[model] = {
+        "capable": bool(capable),
+        "efforts": [e for e in (efforts or []) if e in _EFFORT_ORDER],
+        "mandatory": bool(mandatory),
+    }
+
+
+def infer_provider(model: str) -> Optional[str]:
+    """Best guess of the provider from the model id alone, used when a caller
+    (an older renderer's /cost-guard/reserve) doesn't say. Mirrors the shape
+    rules `rates_for` uses."""
+    m = (model or "").strip().lower()
+    if "/" in m:
+        return "openrouter"
+    if m.startswith("claude-"):
+        return "anthropic"
+    if m.startswith("gpt-") or re.match(r"^o\d", m):
+        return "openai"
+    if m.startswith("gemini-"):
+        return "gemini"
+    if m.startswith("grok-"):
+        return "xai"
+    return None
+
+
+def anthropic_thinks_by_default(model: str) -> bool:
+    """Claude models that think when `thinking` is omitted.
+
+    Opus 5 / 5.5, Sonnet 5 / 5.5, Haiku 5.5, and every Fable and Mythos model.
+    Opus 4.8 / 4.7 / 4.6, Sonnet 4.6 / 4.5 and Haiku 4.5 (and older) answer
+    without thinking. Any opus/sonnet/haiku with a major version of 5 or more
+    counts as thinking, so a future Claude defaults to the safe side
+    (room to think, and a reservation that covers it).
+    """
+    m = normalize_model_id(model).lower()
+    if m.startswith("claude-fable") or m.startswith("claude-mythos"):
+        return True
+    version = re.match(r"^claude-(?:opus|sonnet|haiku)-(\d+)", m)
+    return bool(version) and int(version.group(1)) >= 5
+
+
+def gemini_thinks_by_default(model: str) -> bool:
+    """Gemini 2.5 and 3.x think by default, inside max_output_tokens.
+
+    gemini-2.5-flash-lite is the exception: it does not think unless asked.
+    The floating aliases (gemini-flash-latest, gemini-pro-latest, ...) point
+    at the current 2.5 / 3.x models, so they follow the thinking rule.
+    """
+    m = (model or "").strip().lower()
+    if m.startswith("gemini-2.5-flash-lite"):
+        return False
+    if re.match(r"^gemini-(flash|pro|flash-lite)-latest$", m):
+        return True
+    return m.startswith("gemini-2.5") or bool(re.match(r"^gemini-[3-9]", m))
+
+
+def openai_is_reasoning_model(model: str) -> bool:
+    """OpenAI models that THINK on our requests: the gpt-5 line and the
+    o-series, plus -pro tiers (which only run at "high").
+
+    gpt-5.1 and later are sent reasoning_effort "none" (see
+    `openai_reasoning_effort`), which means no thinking, so they need no
+    extra room and don't count here."""
+    if openai_is_classic_chat_model(model):
+        return False
+    m = (model or "").strip().lower()
+    if "-pro" in m:
+        return True
+    effort = openai_reasoning_effort(model)
+    return effort is not None and effort != "none"
+
+
+def _openrouter_split(model: str) -> tuple[str, str]:
+    vendor, _, name = (model or "").partition("/")
+    return vendor.lower(), name.split(":", 1)[0]
+
+
+def openrouter_name_reasons(model: str) -> bool:
+    """Name rules for OpenRouter ids from the vendors we also support
+    first-party (used when the catalog is not loaded, or says nothing
+    useful). The same rules as the direct paths, applied to the part after
+    the slash. Anything else: False (the empty-answer guard still applies)."""
+    vendor, name = _openrouter_split(model)
+    if vendor == "openai":
+        return openai_is_reasoning_model(name)
+    if vendor == "anthropic":
+        return anthropic_thinks_by_default(name.replace(".", "-"))
+    if vendor == "google":
+        return gemini_thinks_by_default(name)
+    return False
+
+
+def openrouter_is_reasoning_model(model: str) -> bool:
+    # OpenAI on OpenRouter follows the direct OpenAI rules exactly, so the
+    # two paths can't disagree (e.g. gpt-5.1 at "none" thinks not at all).
+    if _openrouter_split(model)[0] == "openai":
+        return openrouter_name_reasons(model)
+    info = _RUNTIME_REASONING.get(model)
+    if info is not None:
+        return info["capable"]
+    return openrouter_name_reasons(model)
+
+
+def thinking_allowance(provider: Optional[str], model: str) -> int:
+    """Extra output tokens a reasoning model gets on top of max_tokens.
+
+    THINKING_ALLOWANCE_TOKENS for reasoning models, 0 otherwise. Used by the
+    adapters (request size) AND CostGuard (reservation). xAI, MiniMax and
+    local runtimes get 0: nothing in their pinned clients or our code shows
+    reasoning counting against `max_tokens` there (Grok returns reasoning in
+    a separate field; MiniMax <think> text is stripped from content).
+    """
+    p = provider or infer_provider(model)
+    if p == "openai":
+        reasons = openai_is_reasoning_model(model)
+    elif p == "anthropic":
+        reasons = anthropic_thinks_by_default(model)
+    elif p == "gemini":
+        reasons = gemini_thinks_by_default(model)
+    elif p == "openrouter":
+        reasons = openrouter_is_reasoning_model(model)
+    else:
+        reasons = False
+    return THINKING_ALLOWANCE_TOKENS if reasons else 0
+
+
+def openai_sampling_kwargs(model: str, max_tokens: int) -> dict[str, Any]:
+    """Kwargs for direct OpenAI Chat Completions."""
+    if openai_is_classic_chat_model(model):
+        return {"max_tokens": max_tokens, "temperature": _TEMPERATURE}
+    out: dict[str, Any] = {
+        "max_completion_tokens": max_tokens + thinking_allowance("openai", model),
+    }
+    effort = openai_reasoning_effort(model)
+    if effort is not None:
+        out["reasoning_effort"] = effort
+    return out
+
+
+def openrouter_reasoning_effort(model: str) -> Optional[str]:
+    """The effort to put in OpenRouter's `reasoning` object, or None to send
+    no reasoning object at all.
+
+    - openai/*: exactly what the direct OpenAI path sends for the same name
+      (`openai_reasoning_effort`): "minimal" for gpt-5, "none" for gpt-5.1+,
+      "low" for the o-series, and None for -pro (only "high" is accepted)
+      and -chat (not a reasoning model).
+    - other models that reason by default: the lowest listed effort other
+      than "none" ("none" is rejected with a 400 by models that think by
+      default, e.g. Sonnet 5.5 / Opus 5.5 / Fable), else "low".
+    - models that don't reason by default: None.
+    """
+    vendor, name = _openrouter_split(model)
+    if vendor == "openai":
+        if openai_is_classic_chat_model(name):
+            return None
+        return openai_reasoning_effort(name)
+    if not openrouter_is_reasoning_model(model):
+        return None
+    info = _RUNTIME_REASONING.get(model) or {}
+    efforts = [e for e in (info.get("efforts") or []) if e != "none"]
+    for e in _EFFORT_ORDER:
+        if e in efforts:
+            return e
+    return "low"
+
+
+def _classic_sampling_kwargs(model: str, max_tokens: int) -> dict[str, Any]:
+    """The original shape, unchanged, for xAI / MiniMax / local runtimes."""
+    del model  # same for every model on these endpoints
+    return {"max_tokens": max_tokens, "temperature": _TEMPERATURE}
+
+
+def openrouter_sampling_kwargs(model: str, max_tokens: int) -> dict[str, Any]:
+    """OpenRouter forwards sampling params to the vendor, so a vendor that
+    rejects temperature rejects it here too. Apply the vendor's own rule to
+    the part after the slash. OpenRouter itself accepts `max_tokens` for
+    every model (its catalog lists it for openai/gpt-5 too), so the token
+    kwarg stays `max_tokens`."""
+    vendor, _, name = (model or "").partition("/")
+    vendor = vendor.lower()
+    name = name.split(":", 1)[0]
+    if vendor == "anthropic":
+        ok = anthropic_accepts_temperature(name.replace(".", "-"))
+    elif vendor == "openai":
+        ok = openai_is_classic_chat_model(name)
+    else:
+        ok = True  # other vendors: unchanged behaviour
+    out: dict[str, Any] = {"max_tokens": max_tokens}
+    if ok:
+        out["temperature"] = _TEMPERATURE
+    # Reasoning models: room to think (allowance 0 otherwise, including
+    # openai/gpt-5.1+ at effort "none") plus OpenRouter's unified `reasoning`
+    # object (sent whenever we have an effort, "none" included for openai). Per OpenRouter's docs send effort OR reasoning.max_tokens, not
+    # both; we send effort. Budget-style vendors turn the effort into a share
+    # of the top-level max_tokens (Anthropic with a 1024 minimum), so
+    # 400 + 1200 = 1600 leaves room for the visible answer. `exclude` keeps
+    # the reasoning text out of the response. `reasoning` is not a typed
+    # Chat Completions parameter in the openai SDK, so it goes in extra_body.
+    out["max_tokens"] = max_tokens + thinking_allowance("openrouter", model)
+    effort = openrouter_reasoning_effort(model)
+    if effort is not None:
+        out["extra_body"] = {"reasoning": {"effort": effort, "exclude": True}}
+    return out
+
+
+class ReasoningBudgetExhausted(RuntimeError):
+    """A reasoning model spent its whole output budget on hidden reasoning
+    and returned no visible text.
+
+    Raised instead of returning "" so the turn fails visibly (the debate
+    shows a "[live debate error]" message, and a first-agent failure aborts
+    the run) rather than "completing" with blank agents and a default
+    neutral stance. Carries the token usage, because those reasoning tokens
+    were still billed and CostGuard must count them.
+    """
+
+    USER_MESSAGE = (
+        "The model used its whole output budget on internal reasoning and "
+        "returned no text. Try a non-reasoning model."
+    )
+
+    def __init__(self, input_tokens: int = 0, output_tokens: int = 0) -> None:
+        super().__init__(self.USER_MESSAGE)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+
+
+class ModelRefused(RuntimeError):
+    """The model declined to answer (Anthropic stop_reason "refusal") and
+    returned no text. Raised so the turn fails visibly instead of being a
+    blank agent message. Carries token usage like ReasoningBudgetExhausted."""
+
+    USER_MESSAGE = "The model declined to answer this request."
+
+    def __init__(self, input_tokens: int = 0, output_tokens: int = 0) -> None:
+        super().__init__(self.USER_MESSAGE)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
 
 # ---- Adapter Protocol -----------------------------------------------------
@@ -717,6 +911,16 @@ class OpenAIAdapter:
                 pass
             self._client = None
 
+    def _sampling_kwargs(self, model: str, max_tokens: int) -> dict[str, Any]:
+        """Token-limit + sampling kwargs for direct OpenAI (api.openai.com).
+
+        Subclasses that talk to other OpenAI-compatible endpoints override
+        this (see `_classic_sampling_kwargs`), because those endpoints have
+        their own rules and the OpenAI-specific ones below must not leak
+        into them.
+        """
+        return openai_sampling_kwargs(model, max_tokens)
+
     async def complete(
         self,
         *,
@@ -729,17 +933,21 @@ class OpenAIAdapter:
             raise RuntimeError("adapter not opened")
         resp = await self._client.chat.completions.create(
             model=model,
-            max_tokens=max_tokens,
-            temperature=0.7,
+            **self._sampling_kwargs(model, max_tokens),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
-        choice = resp.choices[0].message.content or ""
+        first = resp.choices[0]
+        choice = first.message.content or ""
         usage = resp.usage
         in_tok = getattr(usage, "prompt_tokens", 0) if usage else 0
         out_tok = getattr(usage, "completion_tokens", 0) if usage else 0
+        if not choice.strip() and getattr(first, "finish_reason", None) == "length":
+            # Empty text AND cut off at the token limit: a reasoning model
+            # used the whole budget thinking. Fail the turn loudly.
+            raise ReasoningBudgetExhausted(in_tok, out_tok)
         return choice.strip(), in_tok, out_tok
 
 
@@ -754,6 +962,9 @@ class OpenRouterAdapter(OpenAIAdapter):
         "HTTP-Referer": "https://github.com/RBJGlobal/TradingAgentsLab",
         "X-Title": "TradingAgentsLab",
     }
+
+    def _sampling_kwargs(self, model: str, max_tokens: int) -> dict[str, Any]:
+        return openrouter_sampling_kwargs(model, max_tokens)
 
 
 # ---- xAI Grok + MiniMax adapters (OpenAI-compatible, API key only) --------
@@ -772,6 +983,10 @@ class XaiAdapter(OpenAIAdapter):
     # Own the dict per class so an in-place mutation never leaks across
     # providers via the shared OpenAIAdapter default. xAI needs no extras.
     _extra_headers: dict[str, str] = {}
+
+    def _sampling_kwargs(self, model: str, max_tokens: int) -> dict[str, Any]:
+        # xAI's own rules, not OpenAI's: keep the original request shape.
+        return _classic_sampling_kwargs(model, max_tokens)
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -818,6 +1033,9 @@ class MiniMaxAdapter(OpenAIAdapter):
     # Own the dict per class (see XaiAdapter). MiniMax needs no extra headers.
     _extra_headers: dict[str, str] = {}
 
+    def _sampling_kwargs(self, model: str, max_tokens: int) -> dict[str, Any]:
+        return _classic_sampling_kwargs(model, max_tokens)
+
     async def complete(
         self,
         *,
@@ -849,9 +1067,8 @@ class LocalLLMAdapter(OpenAIAdapter):
     `__init__(base_url=...)`.
 
     Cost note: local LLM cost is treated as $0 by the engine (CostGuard
-    short-circuits the same way as OAuth). The estimate table in
-    `_COST_PER_M_TOKENS` doesn't carry an entry for the dynamic model
-    string a runtime returns, so `estimate_cost` returns 0.0 naturally.
+    short-circuits the same way as OAuth, and `rates_for(...,
+    provider="local")` returns None so `estimate_cost` logs 0.0).
     """
 
     name = "local"
@@ -865,6 +1082,11 @@ class LocalLLMAdapter(OpenAIAdapter):
         # checks the instance dict first, so `open()` reading `self._base_url`
         # picks this up without further changes.
         self._base_url = base_url
+
+    def _sampling_kwargs(self, model: str, max_tokens: int) -> dict[str, Any]:
+        # Ollama / LM Studio: keep the original shape (some local runtimes
+        # don't understand `max_completion_tokens`).
+        return _classic_sampling_kwargs(model, max_tokens)
 
 
 # ---- OpenAI Codex adapter (OAuth / ChatGPT-subscription path) -------------
@@ -1105,31 +1327,53 @@ class AnthropicAdapter:
         if self._client is None:
             raise RuntimeError("adapter not opened")
         # Anthropic puts the system prompt at the top level, NOT in messages.
-        # `max_tokens` is required (not optional like OpenAI).
-        resp = await self._client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=0.7,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        # `resp.content` is a list of content blocks. For non-tool responses
-        # we expect a single TextBlock; concatenate all text blocks defensively.
+        # `max_tokens` is required (not optional like OpenAI). Temperature is
+        # sent only to older models that accept it; newer ones return HTTP
+        # 400 for sampling params (see `anthropic_accepts_temperature`).
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if anthropic_accepts_temperature(model):
+            kwargs["temperature"] = _TEMPERATURE
+        allowance = thinking_allowance("anthropic", model)
+        if allowance:
+            # Models that think by default (Opus 5+, Sonnet 5+, Haiku 5.5,
+            # Fable, Mythos): room to think on top of the answer budget, and
+            # the lowest effort. `output_config` is a typed parameter in the
+            # pinned anthropic SDK (OutputConfigParam.effort: low | medium |
+            # high | xhigh | max). We do NOT send `thinking: {"type":
+            # "disabled"}` or `budget_tokens`: these models reject both (400).
+            kwargs["max_tokens"] = max_tokens + allowance
+            kwargs["output_config"] = {"effort": "low"}
+        resp = await self._client.messages.create(**kwargs)
+        # `resp.content` is a list of content blocks. A thinking model puts a
+        # `thinking` (or `redacted_thinking`) block BEFORE the answer, so we
+        # keep only blocks of type "text" and join them. Never read
+        # content[0].text: the first block may be the thinking.
         parts: list[str] = []
         for block in resp.content or []:
+            if getattr(block, "type", None) != "text":
+                continue
             text = getattr(block, "text", None)
             if isinstance(text, str):
                 parts.append(text)
         content = "".join(parts).strip()
-        # `resp.usage.input_tokens` / `output_tokens` are the canonical fields.
+        # `resp.usage.input_tokens` / `output_tokens` are the canonical fields
+        # (output includes thinking tokens, which are billed as output).
         usage = resp.usage
         in_tok = int(getattr(usage, "input_tokens", 0) or 0)
         out_tok = int(getattr(usage, "output_tokens", 0) or 0)
-        # Note on stop_reason: "max_tokens" indicates truncation. The content
-        # is still valid text; we surface it as-is — the founder can see
-        # truncation in the transcript and re-run with a higher cap if needed.
-        # If we wanted to be stricter we could append "[truncated]" to the
-        # content; intentionally not doing that to keep stub/live UX identical.
+        if not content and getattr(resp, "stop_reason", None) == "max_tokens":
+            # Thinking used the whole limit and no answer came back: fail the
+            # turn visibly (same guard as the OpenAI-compatible adapters).
+            raise ReasoningBudgetExhausted(in_tok, out_tok)
+        if not content and getattr(resp, "stop_reason", None) == "refusal":
+            raise ModelRefused(in_tok, out_tok)
+        # A non-empty answer cut at max_tokens is still valid text; we surface
+        # it as-is (the transcript shows the truncation).
         return content, in_tok, out_tok
 
 
@@ -1182,9 +1426,16 @@ class GeminiAdapter:
 
         # Combine system + user. Gemini's `system_instruction` is a separate
         # config field; we pass it that way so the user message stays clean.
+        # Gemini 2.5 / 3.x think by default, and thinking tokens count inside
+        # max_output_tokens, so they get the thinking allowance on top of the
+        # answer budget. We deliberately do NOT set a ThinkingConfig: the
+        # pinned google-genai SDK (2.0.0) has the fields (thinking_budget,
+        # where "0 is DISABLED"; thinking_level MINIMAL..HIGH) but documents
+        # the allowed values as "model dependent", and a value a model
+        # rejects would 400 every run. Only the larger limit is set.
         config = types.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=max_tokens,
+            max_output_tokens=max_tokens + thinking_allowance("gemini", model),
             temperature=0.7,
         )
 
@@ -1207,6 +1458,15 @@ class GeminiAdapter:
             usage = getattr(resp, "usage_metadata", None)
             in_tok = int(getattr(usage, "prompt_token_count", 0) or 0) if usage else 0
             out_tok = int(getattr(usage, "candidates_token_count", 0) or 0) if usage else 0
+            # Thinking tokens are reported separately from the answer
+            # (`thoughts_token_count`) but billed as output: count them.
+            out_tok += int(getattr(usage, "thoughts_token_count", 0) or 0) if usage else 0
+            candidates = getattr(resp, "candidates", None) or []
+            finish = getattr(candidates[0], "finish_reason", None) if candidates else None
+            finish_name = str(getattr(finish, "value", finish) or "")
+            if not content and finish_name == "MAX_TOKENS":
+                # Thinking used the whole limit, no answer: fail visibly.
+                raise ReasoningBudgetExhausted(in_tok, out_tok)
             return content, in_tok, out_tok
 
         return await asyncio.to_thread(_call)

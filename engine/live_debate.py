@@ -34,6 +34,8 @@ from typing import AsyncIterator, Optional
 from .data_providers import Headline, QuoteSummary
 from .llm_providers import (
     LLMAdapter,
+    ModelRefused,
+    ReasoningBudgetExhausted,
     ProviderConfig,
     adapter_for,
     estimate_cost,
@@ -609,6 +611,12 @@ async def live_debate(
                     max_tokens=config.max_tokens,
                 )
             except Exception as exc:  # noqa: BLE001 — convert any provider error into a stream event
+                # Some failures still consumed billed tokens (e.g. a
+                # reasoning model that spent its budget and returned no text,
+                # see ReasoningBudgetExhausted). Count them so the logged cost
+                # and the CostGuard finalize are not understated.
+                state.input_tokens += int(getattr(exc, "input_tokens", 0) or 0)
+                state.output_tokens += int(getattr(exc, "output_tokens", 0) or 0)
                 yield {
                     "type": "agent.message",
                     "agent": agent.name,
@@ -623,9 +631,20 @@ async def live_debate(
                         "bull_strength": 0,
                         "bear_strength": 0,
                         "risk_level": "moderate",
+                        # The reason depends on the failure: "check your key"
+                        # is wrong advice when the key worked but a reasoning
+                        # model spent its whole budget thinking.
                         "reasoning": (
-                            f"Live debate aborted: {type(exc).__name__}. "
-                            f"Check the configured {config.provider} key and model availability."
+                            "Live debate stopped: the model spent its whole "
+                            "output budget on hidden reasoning and returned no "
+                            "text. Try a non-reasoning model."
+                            if isinstance(exc, ReasoningBudgetExhausted)
+                            else "Live debate stopped: the model declined to answer this request."
+                            if isinstance(exc, ModelRefused)
+                            else (
+                                f"Live debate aborted: {type(exc).__name__}. "
+                                f"Check the configured {config.provider} key and model availability."
+                            )
                         ),
                     }
                     break
@@ -731,10 +750,12 @@ async def live_debate(
                 from . import cost_guard as _cost_guard
 
                 # Bill the actual partial cost on early exit; full cost on
-                # normal completion. OAuth always finalizes at 0.0.
+                # normal completion. OAuth and local always finalize at 0.0
+                # (local was $0 before only because its model names had no
+                # price row; now that unknown names get a ceiling, say so).
                 final_cost = (
                     0.0
-                    if config.auth_kind == "oauth"
+                    if config.auth_kind in ("oauth", "local")
                     else estimate_cost(
                         config.model, state.input_tokens, state.output_tokens,
                         provider=config.provider,

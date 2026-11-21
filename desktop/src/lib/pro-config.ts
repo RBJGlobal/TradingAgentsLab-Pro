@@ -14,7 +14,8 @@
  * full-graph run before the user configures anything or adds a data key.
  */
 
-import type { ProConfig } from './engine-client';
+import type { LLMProvider, ProConfig } from './engine-client';
+import { migrateSavedModel } from './provider-models';
 
 const STORAGE_KEY = 'tal:pro-config';
 
@@ -36,11 +37,37 @@ export const ANALYSTS_NEEDING_DATA_KEY: AnalystId[] = ['social', 'news', 'fundam
 
 /** Anthropic reasoning-effort is the ONLY effort control we surface today,
  * and it applies to BOTH the deep and quick clients (the library threads
- * `anthropic_effort` into the shared llm_kwargs). Only claude-sonnet-4-6
- * accepts the param; haiku-4-5 and sonnet-4-5 return HTTP 400. So effort is
- * valid only when the provider is Anthropic AND both models are the one
- * effort-capable model. */
-export const EFFORT_CAPABLE_MODELS = new Set(['claude-sonnet-4-6']);
+ * `anthropic_effort` into the shared llm_kwargs). Whether a model accepts it
+ * is decided by `modelSupportsEffort`, which mirrors the vendored library's
+ * rule (tradingagents/llm_clients/anthropic_client.py `_supports_effort`):
+ * Opus 4.5+, Sonnet 4.6+, the Fable 5 family and later, plus a few exact
+ * preview names. Sonnet 4.5 and every Haiku return HTTP 400. A rule (not a
+ * fixed list) so models that arrive through the live model list are gated
+ * correctly without a release. Effort is valid only when the provider is
+ * Anthropic AND both the deep and the quick model accept it. */
+const EFFORT_EXACT = new Set(['claude-mythos-preview', 'claude-mythos-5']);
+const EFFORT_MODEL = /^claude-(opus|sonnet|fable)-(\d+)(?:-(\d+))?$/;
+const EFFORT_MIN_VERSION: Record<string, [number, number]> = {
+  opus: [4, 5],
+  sonnet: [4, 6],
+  fable: [5, 0],
+};
+
+/** True when Anthropic accepts the `effort` parameter for this model id.
+ * Same regex, exact names and per-family minimums as the library, so the
+ * renderer never sends effort the library would itself drop (or that would
+ * 400). Dated snapshot ids do not match, same as the library. */
+export function modelSupportsEffort(model: string): boolean {
+  const id = model.toLowerCase();
+  if (EFFORT_EXACT.has(id)) return true;
+  const m = EFFORT_MODEL.exec(id);
+  if (!m) return false;
+  const [minMajor, minMinor] = EFFORT_MIN_VERSION[m[1]];
+  const major = Number(m[2]);
+  const minor = m[3] ? Number(m[3]) : 0;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
 export const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
@@ -58,7 +85,37 @@ export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
   yfinance: 'Yahoo Finance',
 };
 
+/** How a Pro run is analyzed (Pro 1.1.10+).
+ *
+ * - `full`: the real LangGraph graph (analyst team with tools, bull/bear
+ *   research debate, trader, risk team, portfolio manager), deep/quick
+ *   model split, Pro Cost Guard estimate.
+ * - `quick`: the Lite app's simplified debate on the engine's live_debate
+ *   path: twelve agents on the one selected model, a single pass, the
+ *   simplified Cost Guard estimate. The analyst / round / effort / token cap
+ *   settings below do not apply to it.
+ */
+export const RUN_MODES = ['full', 'quick'] as const;
+export type RunMode = (typeof RUN_MODES)[number];
+
+export const RUN_MODE_LABEL: Record<RunMode, string> = {
+  full: 'Full analysis',
+  quick: 'Quick analysis',
+};
+
+/** Which analysis produced a row: 'Full' (LangGraph graph) or 'Quick'
+ * (Quick analysis or a Telegram bot run). Rows saved before Pro 1.1.10 have
+ * no mode and show none. */
+export function runModeTag(mode: string | null | undefined): string {
+  if (mode === 'quick') return 'Quick · ';
+  if (mode === 'full') return 'Full · ';
+  return '';
+}
+
 export interface ProConfigState {
+  /** Full graph or Quick analysis. Default `full` (the Pro behavior before
+   * run modes existed). */
+  runMode: RunMode;
   /** null = use the primary model the user picked on Analyze (the deep model). */
   deepModel: string | null;
   quickModel: string | null;
@@ -73,6 +130,7 @@ export interface ProConfigState {
 }
 
 export const DEFAULT_PRO_CONFIG: ProConfigState = {
+  runMode: 'full',
   deepModel: null,
   quickModel: null,
   effort: null,
@@ -99,12 +157,16 @@ export function loadProConfig(): ProConfigState {
     const newsSource = (NEWS_SOURCES as readonly string[]).includes(parsed.newsSource as string)
       ? (parsed.newsSource as NewsSource)
       : DEFAULT_PRO_CONFIG.newsSource;
+    const runMode = (RUN_MODES as readonly string[]).includes(parsed.runMode as string)
+      ? (parsed.runMode as RunMode)
+      : DEFAULT_PRO_CONFIG.runMode;
     return {
       ...DEFAULT_PRO_CONFIG,
       ...parsed,
       // Never allow an empty analyst set (a run with zero analysts is invalid).
       selectedAnalysts: analysts.length > 0 ? analysts : DEFAULT_PRO_CONFIG.selectedAnalysts,
       newsSource,
+      runMode,
     };
   } catch {
     return { ...DEFAULT_PRO_CONFIG };
@@ -120,7 +182,7 @@ export function saveProConfig(state: ProConfigState): void {
 }
 
 /** True when Anthropic reasoning-effort may be sent for this deep/quick pair.
- * See EFFORT_CAPABLE_MODELS: guards the both-models-accept-it requirement so
+ * See modelSupportsEffort: guards the both-models-accept-it requirement so
  * we never ship a request that 400s on the quick client. */
 export function effortAllowed(
   provider: string | null,
@@ -129,9 +191,27 @@ export function effortAllowed(
 ): boolean {
   return (
     provider === 'anthropic' &&
-    EFFORT_CAPABLE_MODELS.has(deepModel) &&
-    EFFORT_CAPABLE_MODELS.has(quickModel)
+    modelSupportsEffort(deepModel) &&
+    modelSupportsEffort(quickModel)
   );
+}
+
+/** Providers whose saved model ids may need a one-time remap. */
+const KNOWN_PROVIDERS: readonly LLMProvider[] = [
+  'openai', 'anthropic', 'openrouter', 'gemini', 'xai', 'minimax', 'local',
+];
+
+/** Apply the same retired-id remap Analyze applies to the primary model
+ * (provider-models.ts `migrateSavedModel`) to a saved deep/quick override,
+ * so a saved `gemini-2.0-flash` runs as `gemini-3.1-flash-lite` instead of
+ * failing. null stays null ("use the primary model"). */
+export function migrateSavedRoleModel(
+  provider: string | null,
+  saved: string | null,
+): string | null {
+  if (!saved || !provider) return saved;
+  if (!(KNOWN_PROVIDERS as readonly string[]).includes(provider)) return saved;
+  return migrateSavedModel(provider as LLMProvider, saved);
 }
 
 /**
@@ -144,8 +224,8 @@ export function assembleProConfig(
   provider: string | null,
   state: ProConfigState = loadProConfig(),
 ): ProConfig {
-  const deep = state.deepModel || primaryModel;
-  const quick = state.quickModel || primaryModel;
+  const deep = migrateSavedRoleModel(provider, state.deepModel) || primaryModel;
+  const quick = migrateSavedRoleModel(provider, state.quickModel) || primaryModel;
   const cfg: ProConfig = {
     deep_think_llm: deep,
     quick_think_llm: quick,

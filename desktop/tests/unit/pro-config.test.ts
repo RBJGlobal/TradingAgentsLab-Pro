@@ -3,13 +3,16 @@
 // Unit tests for the Pro run-config assembly + the Anthropic effort guard.
 // These are the pure decisions behind every Pro run (engine='pro' path), so
 // they must be correct independent of the UI: the deep/quick split defaulting,
-// the both-models effort guard (only claude-sonnet-4-6 accepts effort, and it
-// hits BOTH clients), token-cap inclusion, and corrupt-blob load recovery.
+// the both-models effort guard (the effort rule mirrors the library's
+// `_supports_effort`, and effort hits BOTH clients), saved deep/quick id
+// migration, token-cap inclusion, and corrupt-blob load recovery.
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   assembleProConfig,
   effortAllowed,
   loadProConfig,
+  migrateSavedRoleModel,
+  modelSupportsEffort,
   saveProConfig,
   DEFAULT_PRO_CONFIG,
   type ProConfigState,
@@ -135,5 +138,80 @@ describe('news source (Part B)', () => {
   it('round-trips a valid source', () => {
     saveProConfig({ ...base, newsSource: 'alpaca' });
     expect(loadProConfig().newsSource).toBe('alpaca');
+  });
+});
+
+describe('modelSupportsEffort (mirrors anthropic_client._supports_effort)', () => {
+  it('accepts Sonnet 4.6+, Opus 4.5+, the Fable 5 family and the exact preview names', () => {
+    expect(modelSupportsEffort('claude-sonnet-4-6')).toBe(true);
+    expect(modelSupportsEffort('claude-sonnet-5')).toBe(true);
+    expect(modelSupportsEffort('claude-sonnet-5-5')).toBe(true);
+    expect(modelSupportsEffort('claude-opus-4-5')).toBe(true);
+    expect(modelSupportsEffort('claude-opus-4-8')).toBe(true);
+    expect(modelSupportsEffort('claude-opus-5-5')).toBe(true);
+    expect(modelSupportsEffort('claude-fable-5')).toBe(true);
+    expect(modelSupportsEffort('claude-fable-5-2')).toBe(true);
+    expect(modelSupportsEffort('claude-mythos-preview')).toBe(true);
+    expect(modelSupportsEffort('claude-mythos-5')).toBe(true);
+    expect(modelSupportsEffort('Claude-Sonnet-4-6')).toBe(true); // case-insensitive
+  });
+
+  it('rejects Sonnet 4.5 and older, Opus below 4.5, every Haiku, and non-matching ids', () => {
+    expect(modelSupportsEffort('claude-sonnet-4-5')).toBe(false);
+    expect(modelSupportsEffort('claude-sonnet-4')).toBe(false);
+    expect(modelSupportsEffort('claude-opus-4-1')).toBe(false);
+    expect(modelSupportsEffort('claude-opus-4')).toBe(false);
+    expect(modelSupportsEffort('claude-haiku-4-5')).toBe(false);
+    expect(modelSupportsEffort('claude-haiku-5-5')).toBe(false);
+    expect(modelSupportsEffort('claude-fable-4-9')).toBe(false);
+    // Dated snapshots do not match the library's regex either.
+    expect(modelSupportsEffort('claude-sonnet-4-6-20260101')).toBe(false);
+    expect(modelSupportsEffort('gpt-5.5')).toBe(false);
+  });
+
+  it('gates effort on new live-list models when both deep and quick accept it', () => {
+    expect(effortAllowed('anthropic', 'claude-opus-5-5', 'claude-sonnet-5-5')).toBe(true);
+    expect(effortAllowed('anthropic', 'claude-fable-5', 'claude-haiku-5-5')).toBe(false);
+    const cfg = assembleProConfig('claude-sonnet-5-5', 'anthropic', {
+      ...base,
+      effort: 'medium',
+      deepModel: 'claude-opus-5-5',
+    });
+    expect(cfg.effort).toBe('medium');
+  });
+});
+
+describe('saved deep/quick model migration', () => {
+  it('moves a saved gemini-2.0-flash deep/quick choice to gemini-3.1-flash-lite', () => {
+    const cfg = assembleProConfig('gemini-2.5-flash', 'gemini', {
+      ...base,
+      deepModel: 'gemini-2.0-flash',
+      quickModel: 'gemini-2.0-flash',
+    });
+    expect(cfg.deep_think_llm).toBe('gemini-3.1-flash-lite');
+    expect(cfg.quick_think_llm).toBe('gemini-3.1-flash-lite');
+  });
+
+  it('remaps the retired OpenRouter ids', () => {
+    const cfg = assembleProConfig('openai/gpt-4o-mini', 'openrouter', {
+      ...base,
+      deepModel: 'anthropic/claude-opus-4-8',
+      quickModel: 'google/gemini-2.0-flash',
+    });
+    expect(cfg.deep_think_llm).toBe('anthropic/claude-opus-4.8');
+    expect(cfg.quick_think_llm).toBe('google/gemini-2.5-flash');
+  });
+
+  it('keeps null as "use the primary model" and leaves other ids unchanged', () => {
+    const cfg = assembleProConfig('gemini-3.1-flash-lite', 'gemini', {
+      ...base,
+      deepModel: null,
+      quickModel: 'gemini-2.5-pro',
+    });
+    expect(cfg.deep_think_llm).toBe('gemini-3.1-flash-lite');
+    expect(cfg.quick_think_llm).toBe('gemini-2.5-pro');
+    expect(migrateSavedRoleModel('gemini', null)).toBeNull();
+    expect(migrateSavedRoleModel(null, 'gemini-2.0-flash')).toBe('gemini-2.0-flash');
+    expect(migrateSavedRoleModel('anthropic', 'gemini-2.0-flash')).toBe('gemini-2.0-flash');
   });
 });

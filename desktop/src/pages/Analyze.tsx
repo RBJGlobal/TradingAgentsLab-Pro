@@ -21,6 +21,13 @@ import {
   type SpendState,
 } from '../lib/cost-guard';
 import { runAnalysis } from '../lib/run-analysis';
+import {
+  RUN_MODES,
+  RUN_MODE_LABEL,
+  loadProConfig,
+  saveProConfig,
+  type RunMode,
+} from '../lib/pro-config';
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
@@ -33,6 +40,36 @@ import {
   markOpenAIOAuthExpired,
 } from '../lib/oauth';
 import { useCodexModels } from '../lib/codex-models';
+import {
+  hasLiveDiscovery,
+  migrateSavedModel,
+  useProviderModels,
+  withSavedChoice,
+} from '../lib/provider-models';
+
+/** The user's saved model id for a (provider, auth) pair, or null. */
+function readSavedModel(
+  provider: LLMProvider,
+  authKind: 'oauth' | 'api_key' | null,
+): string | null {
+  try {
+    const key = getModelStorageKey(provider, authKind);
+    const saved = localStorage.getItem(key);
+    // One-time remap of ids our old built-in list offered but the provider
+    // never had (see migrateSavedModel). Written back so it happens once.
+    const migrated = migrateSavedModel(provider, saved);
+    if (migrated !== saved && migrated) localStorage.setItem(key, migrated);
+    return migrated;
+  } catch {
+    return null; // private mode / storage unavailable
+  }
+}
+
+/** Option text for one model. The note goes in parentheses (Pro's existing
+ * picker format): no dashes in UI copy. */
+function modelOptionLabel(m: ModelChoice): string {
+  return `${m.label}${m.recommended ? ' (recommended)' : ''}${m.note ? ` (${m.note})` : ''}`;
+}
 
 /** Persists the dropdown choice across app sessions (per founder, 2026-05-09). */
 const SELECTED_PROVIDER_STORAGE_KEY = 'tal:analyze:selected-provider';
@@ -62,6 +99,14 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [assetClass, setAssetClass] = useState<'equity' | 'crypto' | null>(null);
   const [events, setEvents] = useState<DebateEvent[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  // Full analysis (LangGraph graph) or Quick analysis (Lite-style debate).
+  // Saved with the other Pro run settings, so batch runs use it too; read
+  // fresh by runAnalysis at run time.
+  const [runMode, setRunMode] = useState<RunMode>(() => loadProConfig().runMode);
+  const onSelectRunMode = (mode: RunMode) => {
+    setRunMode(mode);
+    saveProConfig({ ...loadProConfig(), runMode: mode });
+  };
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   /**
@@ -143,6 +188,34 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   // means a Settings-driven state change racing with a click can't leave
   // the request using a now-stale provider/auth combo. Same pattern as
   // `isStreamingRef`/`engineReadyRef` above.
+  // Live model list for API-key providers. `isApiKeyDiscovery` = the active
+  // provider has live discovery and runs on an API key (OpenAI via OAuth uses
+  // the Codex list above instead). The hook only calls the engine when a key
+  // is saved for that provider; never for providers that aren't active.
+  const isApiKeyDiscovery =
+    hasLiveDiscovery(activeProvider) &&
+    !(activeProvider === 'openai' && openaiAuthKind !== 'api_key');
+  const providerModels = useProviderModels(
+    activeProvider,
+    isApiKeyDiscovery && activeProvider !== null && configuredProviders.has(activeProvider),
+  );
+
+  /** The model "Reset" returns to, and the pick when nothing is saved. */
+  const defaultModelFor = useCallback(
+    (provider: LLMProvider, authKind: 'oauth' | 'api_key' | null): string => {
+      // OAuth: the live catalog's default, not the built-in fallback's.
+      if (provider === 'openai' && authKind === 'oauth' && codexModels.models[0]) {
+        return codexModels.models[0].id;
+      }
+      // API key with discovery: the curated recommendation (never "newest").
+      if (hasLiveDiscovery(provider) && provider === activeProvider) {
+        return providerModels.recommendedId;
+      }
+      return getRecommendedModel(provider, authKind);
+    },
+    [codexModels.models, providerModels.recommendedId, activeProvider],
+  );
+
   const activeProviderRef = useRef<LLMProvider | null>(null);
   const openaiAuthKindRef = useRef<'oauth' | 'api_key' | null>(null);
   useEffect(() => {
@@ -182,6 +255,16 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [localSavedModel, setLocalSavedModel] = useState<string | null>(null);
 
   /**
+   * The model that will run the next debate. Pulls from per-(provider,auth)
+   * localStorage memory if the user picked one before; falls back to the
+   * recommended entry. On the OAuth (Codex) and MiniMax paths a saved id that
+   * is no longer in the list (model retired) is dropped for the
+   * recommendation; on API-key providers with live discovery it is kept
+   * (see `availableModels`).
+   */
+  const [activeModel, setActiveModel] = useState<string | null>(null);
+
+  /**
    * Available models for the current provider+auth combo. Recomputed
    * whenever the active provider, OpenAI auth flow, or local-runtime
    * model list changes. For local, the list is dynamic (per-runtime);
@@ -206,17 +289,36 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     if (activeProvider === 'openai' && openaiAuthKind === 'oauth') {
       return codexModels.models;
     }
+    // API-key providers: the provider's live list (curated entries pinned
+    // first). A saved model the list doesn't contain is KEPT and shown at the
+    // top as the saved choice: the live list may name it differently (alias
+    // vs dated id), and silently swapping it would change the user's model
+    // and cost. Same for the recommended pick if the provider stopped
+    // listing it.
+    if (isApiKeyDiscovery) {
+      return withSavedChoice(
+        providerModels.models,
+        readSavedModel(activeProvider, openaiAuthKind),
+        providerModels.recommendedId,
+        providerModels.source !== 'fallback',
+      );
+    }
     return getAvailableModels(activeProvider, openaiAuthKind);
-  }, [activeProvider, openaiAuthKind, localModels, localSavedModel, codexModels.models]);
+    // activeModel is a dependency so the saved-choice entry refreshes after
+    // a pick or a Reset (both change localStorage, which React can't see).
+  }, [
+    activeProvider,
+    openaiAuthKind,
+    localModels,
+    localSavedModel,
+    codexModels.models,
+    isApiKeyDiscovery,
+    providerModels.models,
+    providerModels.recommendedId,
+    providerModels.source,
+    activeModel,
+  ]);
 
-  /**
-   * The model that will run the next debate. Pulls from per-(provider,auth)
-   * localStorage memory if the user picked one before; falls back to the
-   * recommended entry. Validates against the current available list — if
-   * the saved id no longer exists in the registry (model deprecated), we
-   * drop it and use the recommendation.
-   */
-  const [activeModel, setActiveModel] = useState<string | null>(null);
 
   // Resync the model selection whenever the (provider, authKind) tuple
   // changes. Reads from localStorage; falls back to recommended.
@@ -238,12 +340,12 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       setActiveModel(localSavedModel ?? null);
       return;
     }
-    const key = getModelStorageKey(activeProvider, openaiAuthKind);
-    let saved: string | null = null;
-    try {
-      saved = localStorage.getItem(key);
-    } catch {
-      // ignore
+    const saved = readSavedModel(activeProvider, openaiAuthKind);
+    if (isApiKeyDiscovery) {
+      // Never auto-switch an API-key user's saved model (it costs real
+      // money per token); `availableModels` keeps it selectable.
+      setActiveModel(saved ?? providerModels.recommendedId);
+      return;
     }
     const inList = saved && availableModels.some((m) => m.id === saved);
     // Recommended comes from the list actually shown (for OAuth that is the
@@ -253,7 +355,14 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       (availableModels.find((m) => m.recommended) ?? availableModels[0])?.id ??
       getRecommendedModel(activeProvider, openaiAuthKind);
     setActiveModel(inList ? saved : recommended);
-  }, [activeProvider, openaiAuthKind, availableModels, localSavedModel]);
+  }, [
+    activeProvider,
+    openaiAuthKind,
+    availableModels,
+    localSavedModel,
+    isApiKeyDiscovery,
+    providerModels.recommendedId,
+  ]);
 
   /** Ref mirror so onAnalyze sees the right model under racing state. */
   const activeModelRef = useRef<string | null>(null);
@@ -591,16 +700,11 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
     const provider = activeProviderRef.current;
     const authKind = openaiAuthKindRef.current;
     if (provider) {
-      // OAuth: the live catalog's default, not the built-in fallback's.
-      setActiveModel(
-        provider === 'openai' && authKind === 'oauth' && codexModels.models[0]
-          ? codexModels.models[0].id
-          : getRecommendedModel(provider, authKind),
-      );
+      setActiveModel(defaultModelFor(provider, authKind));
     } else {
       setActiveModel(null);
     }
-  }, [codexModels.models]);
+  }, [defaultModelFor]);
 
   const onAnalyze = async () => {
     if (!engineReadyRef.current || isStreamingRef.current) return;
@@ -792,14 +896,43 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       <header className={styles.pageHeader}>
         <div className={styles.pageHeaderTitleBlock}>
           <h1 className={styles.pageTitle}>Analyze</h1>
-          <p className={styles.pageSubtitle}>
-            Run <strong>the Diligence</strong> on a ticker. Twelve AI agents
-            (analyst, researcher, trader, risk-manager) deliberate from
-            independent angles and converge on a recommendation. Educational
-            research only; not investment advice.
-          </p>
+          {runMode === 'quick' ? (
+            <p className={styles.pageSubtitle} data-testid="run-mode-subtitle">
+              <strong>Quick analysis</strong> on a ticker: twelve AI agents
+              (analyst, researcher, trader, risk-manager) debate in a single
+              pass on the model you pick, and converge on a committee
+              assessment. Faster and lower cost than the full analysis.
+              Educational research only; not investment advice.
+            </p>
+          ) : (
+            <p className={styles.pageSubtitle} data-testid="run-mode-subtitle">
+              Run <strong>the Diligence</strong> on a ticker: the full research
+              graph (analyst team, bull and bear researchers, trader, risk team,
+              portfolio manager) deliberates from independent angles and
+              converges on a committee assessment. Educational research only;
+              not investment advice.
+            </p>
+          )}
         </div>
         <div className={styles.pageHeaderProvider}>
+          <label className={styles.providerLabel} htmlFor="run-mode">
+            Mode
+          </label>
+          <select
+            id="run-mode"
+            className={styles.providerSelect}
+            value={runMode}
+            onChange={(e) => onSelectRunMode(e.target.value as RunMode)}
+            disabled={isStreaming}
+            title="Full analysis runs the complete research graph. Quick analysis runs a shorter single-model debate."
+            data-testid="run-mode-select"
+          >
+            {RUN_MODES.map((m) => (
+              <option key={m} value={m}>
+                {RUN_MODE_LABEL[m]}
+              </option>
+            ))}
+          </select>
           <label className={styles.providerLabel} htmlFor="run-with">
             Run with
           </label>
@@ -838,22 +971,34 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
               aria-label="Select model"
               data-testid="model-select"
             >
-              {availableModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                  {m.recommended ? ' (recommended)' : ''}
-                  {m.note ? ` (${m.note})` : ''}
-                </option>
-              ))}
+              {/* Ungrouped entries (saved choice, short built-in lists) first,
+                  then the live list's groups. Plain <optgroup>, no new UI. */}
+              {availableModels
+                .filter((m) => !m.group)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {modelOptionLabel(m)}
+                  </option>
+                ))}
+              {(['Recommended', 'All available'] as const).map((g) => {
+                const inGroup = availableModels.filter((m) => m.group === g);
+                if (inGroup.length === 0) return null;
+                return (
+                  <optgroup key={g} label={g}>
+                    {inGroup.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {modelOptionLabel(m)}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
           )}
           {(manualProvider ||
             (activeProvider &&
               activeModel !== null &&
-              activeModel !==
-                (activeProvider === 'openai' && openaiAuthKind === 'oauth' && codexModels.models[0]
-                  ? codexModels.models[0].id
-                  : getRecommendedModel(activeProvider, openaiAuthKind)))) && (
+              activeModel !== defaultModelFor(activeProvider, openaiAuthKind))) && (
             <button
               type="button"
               className={styles.providerReset}
@@ -913,6 +1058,34 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
             onClick={codexModels.refresh}
             disabled={codexModels.loading || isStreaming}
             data-testid="codex-models-refresh"
+          >
+            Refresh
+          </button>
+        </p>
+      )}
+
+      {activeProvider !== null && isApiKeyDiscovery && configuredProviders.has(activeProvider) && (
+        // Same live-vs-fallback visibility as the ChatGPT picker above.
+        <p className={styles.helper} data-testid="provider-models-source">
+          {providerModels.loading
+            ? `Models: checking ${PROVIDER_LABEL[activeProvider]}...`
+            : providerModels.source === 'live'
+              ? `Models: live from ${PROVIDER_LABEL[activeProvider]}.`
+              : providerModels.source === 'cached'
+                ? `Models: saved list from ${PROVIDER_LABEL[activeProvider]}${
+                    providerModels.error
+                      ? ` (live list unavailable: ${providerModels.error})`
+                      : ''
+                  }.`
+                : `Models: built-in list. ${PROVIDER_LABEL[activeProvider]} model list unavailable${
+                    providerModels.error ? ` (${providerModels.error})` : ''
+                  }.`}{' '}
+          <button
+            type="button"
+            className={styles.providerReset}
+            onClick={providerModels.refresh}
+            disabled={providerModels.loading || isStreaming}
+            data-testid="provider-models-refresh"
           >
             Refresh
           </button>

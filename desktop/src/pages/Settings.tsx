@@ -1947,6 +1947,10 @@ function ProAnalysisTab() {
 
   return (
     <div className={styles.formCard}>
+      <p className={styles.formHint} data-testid="pro-settings-full-only">
+        These settings shape a Full analysis. Quick analysis (picked under Mode
+        on Analyze) runs a single-model debate and does not use them.
+      </p>
       <fieldset className={styles.formGroup}>
         <legend className={styles.formLegend}>Analysts</legend>
         <p className={styles.formHint}>
@@ -2061,8 +2065,10 @@ function ProAnalysisTab() {
           </label>
         </div>
         <p className={styles.formHint}>
-          Applies to Anthropic Claude Sonnet 4.6 only, the sole model that
-          accepts the effort parameter. Ignored for other providers and models.
+          Applies to Anthropic models that accept the effort parameter: Claude
+          Opus 4.5 and later, Sonnet 4.6 and later, and Fable 5 and later (not
+          Haiku). Both your deep and quick models must accept it, or the setting
+          is ignored. Ignored for other providers.
         </p>
       </fieldset>
 
@@ -2419,7 +2425,7 @@ const BOT_PROVIDER_DEFAULT_MODEL: Record<BotProvider, string> = {
   openai:     'gpt-4o-mini',
   anthropic:  'claude-haiku-4-5',
   openrouter: 'openai/gpt-4o-mini',
-  gemini:     'gemini-2.0-flash',
+  gemini:     'gemini-3.1-flash-lite',
   // Fast/cheap defaults, matching the Analyze picker + engine _DEFAULT_MODELS.
   xai:        'grok-4.3',
   minimax:    'MiniMax-M2.7-highspeed',
