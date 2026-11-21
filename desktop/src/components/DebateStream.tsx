@@ -349,6 +349,15 @@ const PHASE_ACTIVITY: Record<string, string> = {
 // so the copy quotes a range rather than a point estimate.
 const TYPICAL_DURATION = 'Typically 8 to 15 minutes';
 
+/**
+ * The duration hint only describes a Full analysis. The full-graph engine
+ * emits `graph.plan` right after `session.start`; a Quick analysis never
+ * does, and finishes in about a minute, so it gets no hint at all.
+ */
+export function durationHint(events: DebateEvent[]): string | null {
+  return events.some((e) => e.type === 'graph.plan') ? TYPICAL_DURATION : null;
+}
+
 function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const start = findStart(events);
   const summary = findSummary(events);
@@ -358,6 +367,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
   const decision = findDecision(events);
   const meta = findDecisionMeta(events);
   const progress = computeProgress(events);
+  const hint = durationHint(events);
   const webhookReport = findWebhookReport(events);
   // Only surface a terminal notice when the run stopped WITHOUT a decision;
   // a completed run that also happened to emit a late cost event should show
@@ -521,7 +531,7 @@ function DebateStream({ events, isStreaming }: DebateStreamProps) {
                 {elapsedMs !== null && (
                   <span className={styles.liveElapsed}>{formatElapsed(elapsedMs)}</span>
                 )}
-                <span className={styles.liveHint}>{TYPICAL_DURATION}</span>
+                {hint !== null && <span className={styles.liveHint}>{hint}</span>}
               </span>
             </div>
             <div className={styles.liveBar} aria-hidden="true">
