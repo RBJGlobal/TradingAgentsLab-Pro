@@ -14,7 +14,8 @@
  * full-graph run before the user configures anything or adds a data key.
  */
 
-import type { ProConfig } from './engine-client';
+import type { LLMProvider, ProConfig } from './engine-client';
+import { migrateSavedModel } from './provider-models';
 
 const STORAGE_KEY = 'tal:pro-config';
 
@@ -36,11 +37,37 @@ export const ANALYSTS_NEEDING_DATA_KEY: AnalystId[] = ['social', 'news', 'fundam
 
 /** Anthropic reasoning-effort is the ONLY effort control we surface today,
  * and it applies to BOTH the deep and quick clients (the library threads
- * `anthropic_effort` into the shared llm_kwargs). Only claude-sonnet-4-6
- * accepts the param; haiku-4-5 and sonnet-4-5 return HTTP 400. So effort is
- * valid only when the provider is Anthropic AND both models are the one
- * effort-capable model. */
-export const EFFORT_CAPABLE_MODELS = new Set(['claude-sonnet-4-6']);
+ * `anthropic_effort` into the shared llm_kwargs). Whether a model accepts it
+ * is decided by `modelSupportsEffort`, which mirrors the vendored library's
+ * rule (tradingagents/llm_clients/anthropic_client.py `_supports_effort`):
+ * Opus 4.5+, Sonnet 4.6+, the Fable 5 family and later, plus a few exact
+ * preview names. Sonnet 4.5 and every Haiku return HTTP 400. A rule (not a
+ * fixed list) so models that arrive through the live model list are gated
+ * correctly without a release. Effort is valid only when the provider is
+ * Anthropic AND both the deep and the quick model accept it. */
+const EFFORT_EXACT = new Set(['claude-mythos-preview', 'claude-mythos-5']);
+const EFFORT_MODEL = /^claude-(opus|sonnet|fable)-(\d+)(?:-(\d+))?$/;
+const EFFORT_MIN_VERSION: Record<string, [number, number]> = {
+  opus: [4, 5],
+  sonnet: [4, 6],
+  fable: [5, 0],
+};
+
+/** True when Anthropic accepts the `effort` parameter for this model id.
+ * Same regex, exact names and per-family minimums as the library, so the
+ * renderer never sends effort the library would itself drop (or that would
+ * 400). Dated snapshot ids do not match, same as the library. */
+export function modelSupportsEffort(model: string): boolean {
+  const id = model.toLowerCase();
+  if (EFFORT_EXACT.has(id)) return true;
+  const m = EFFORT_MODEL.exec(id);
+  if (!m) return false;
+  const [minMajor, minMinor] = EFFORT_MIN_VERSION[m[1]];
+  const major = Number(m[2]);
+  const minor = m[3] ? Number(m[3]) : 0;
+  return major > minMajor || (major === minMajor && minor >= minMinor);
+}
+
 export const EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
@@ -120,7 +147,7 @@ export function saveProConfig(state: ProConfigState): void {
 }
 
 /** True when Anthropic reasoning-effort may be sent for this deep/quick pair.
- * See EFFORT_CAPABLE_MODELS: guards the both-models-accept-it requirement so
+ * See modelSupportsEffort: guards the both-models-accept-it requirement so
  * we never ship a request that 400s on the quick client. */
 export function effortAllowed(
   provider: string | null,
@@ -129,9 +156,27 @@ export function effortAllowed(
 ): boolean {
   return (
     provider === 'anthropic' &&
-    EFFORT_CAPABLE_MODELS.has(deepModel) &&
-    EFFORT_CAPABLE_MODELS.has(quickModel)
+    modelSupportsEffort(deepModel) &&
+    modelSupportsEffort(quickModel)
   );
+}
+
+/** Providers whose saved model ids may need a one-time remap. */
+const KNOWN_PROVIDERS: readonly LLMProvider[] = [
+  'openai', 'anthropic', 'openrouter', 'gemini', 'xai', 'minimax', 'local',
+];
+
+/** Apply the same retired-id remap Analyze applies to the primary model
+ * (provider-models.ts `migrateSavedModel`) to a saved deep/quick override,
+ * so a saved `gemini-2.0-flash` runs as `gemini-3.1-flash-lite` instead of
+ * failing. null stays null ("use the primary model"). */
+export function migrateSavedRoleModel(
+  provider: string | null,
+  saved: string | null,
+): string | null {
+  if (!saved || !provider) return saved;
+  if (!(KNOWN_PROVIDERS as readonly string[]).includes(provider)) return saved;
+  return migrateSavedModel(provider as LLMProvider, saved);
 }
 
 /**
@@ -144,8 +189,8 @@ export function assembleProConfig(
   provider: string | null,
   state: ProConfigState = loadProConfig(),
 ): ProConfig {
-  const deep = state.deepModel || primaryModel;
-  const quick = state.quickModel || primaryModel;
+  const deep = migrateSavedRoleModel(provider, state.deepModel) || primaryModel;
+  const quick = migrateSavedRoleModel(provider, state.quickModel) || primaryModel;
   const cfg: ProConfig = {
     deep_think_llm: deep,
     quick_think_llm: quick,
