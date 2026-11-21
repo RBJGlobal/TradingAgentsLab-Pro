@@ -952,6 +952,19 @@ def build_app(*, token: str) -> FastAPI:
                         await ws.send_json(event)
                         captured_events.append(event)
                         await asyncio.sleep(0.15)
+                except WebSocketDisconnect:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - last-resort net
+                    # A debate generator that raises instead of yielding
+                    # run.error would otherwise end the socket with no
+                    # message (close code 1006). Tell the user what broke;
+                    # the run then closes normally with no History row.
+                    sys.stderr.write(
+                        f"[ws] debate raised {type(exc).__name__}: {exc}\n"
+                    )
+                    evt = {"type": "run.error", "error": f"{type(exc).__name__}: {exc}"}
+                    await ws.send_json(evt)
+                    captured_events.append(evt)
                 finally:
                     # When the user presses Stop, send_json raises
                     # WebSocketDisconnect mid-loop. Close the generator NOW so
@@ -1159,7 +1172,7 @@ def _build_pro_library_config(config: ProviderConfig, pro_raw: dict) -> dict[str
             lib["anthropic_effort"] = effort
         elif provider == "openai":
             lib["openai_reasoning_effort"] = effort
-        elif provider == "google":
+        elif provider in ("google", "gemini"):
             lib["google_thinking_level"] = effort
     # Local runtime endpoint (Ollama / LM Studio), when the auth shape carries it.
     base_url = config.auth.get("base_url") if isinstance(config.auth, dict) else None

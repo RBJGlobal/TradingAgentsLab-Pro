@@ -182,6 +182,15 @@ _PROVIDER_ENV_VAR: Dict[str, str] = {
     # ollama / other local runtimes need no key (client sends a dummy "ollama").
 }
 
+# The app's provider ids that the upstream library spells differently. The
+# app (and its History rows, pricing and Cost Guard) say "gemini"; the
+# library's LLM factory only accepts "google" and raises on "gemini". The
+# translation happens only at the library boundary, so `merged` keeps the
+# app id for pricing and for session.complete.
+_LIBRARY_PROVIDER: Dict[str, str] = {
+    "gemini": "google",
+}
+
 
 class TokenCapExceeded(Exception):
     """Raised by the in-run token meter when the running total crosses the cap."""
@@ -754,6 +763,7 @@ async def full_debate(
         # other debate coroutine can interleave between set and restore (no await
         # point), and the built clients never re-read the env from worker threads.
         provider = (merged.get("llm_provider") or "").lower()
+        lib_provider = _LIBRARY_PROVIDER.get(provider, provider)
         # OAuth (ChatGPT subscription): don't touch the env var — the access
         # token is not an API key and must not leak into OPENAI_API_KEY where
         # an unrelated SDK path could pick it up. Instead patch the LLM
@@ -763,7 +773,7 @@ async def full_debate(
             auth_kind == "oauth" and provider == "openai" and bool(api_key)
         )
         env_var = (
-            _PROVIDER_ENV_VAR.get(provider) if (api_key and not use_codex) else None
+            _PROVIDER_ENV_VAR.get(lib_provider) if (api_key and not use_codex) else None
         )
         _prev_env: Optional[str] = None
         if env_var and api_key:
@@ -776,13 +786,18 @@ async def full_debate(
             _codex_ctx.__enter__()
         else:
             _codex_ctx = None
+        # A construction failure (an unknown provider, a bad model id the
+        # client rejects up front) is held here and surfaced as run.error
+        # after the env is restored. Raising out of the generator instead
+        # would drop the WebSocket with no message (close code 1006).
+        setup_error: Optional[BaseException] = None
         try:
             # A fresh graph per session: TradingAgentsGraph holds mutable instance
             # state (self.ticker / self.curr_state), so it must not be shared.
             graph = TradingAgentsGraph(
                 selected_analysts=analysts,
                 debug=False,
-                config=merged,
+                config={**merged, "llm_provider": lib_provider},
                 callbacks=[meter],
             )
             # Replicate the library's memory retrieval. Its normal propagate()
@@ -800,6 +815,8 @@ async def full_debate(
             state = graph.propagator.create_initial_state(
                 ticker, trade_date, past_context=effective_past
             )
+        except Exception as exc:  # noqa: BLE001 - surfaced as run.error below
+            setup_error = exc
         finally:
             # Restore BEFORE any await/yield so the mutation window stays sync.
             if _codex_ctx is not None:
@@ -809,6 +826,13 @@ async def full_debate(
                     os.environ.pop(env_var, None)
                 else:
                     os.environ[env_var] = _prev_env
+
+        if setup_error is not None:
+            yield {
+                "type": "run.error",
+                "error": f"{type(setup_error).__name__}: {setup_error}",
+            }
+            return
 
         yield {"type": "session.start", "ticker": ticker, "trade_date": trade_date}
         # graph.plan lets the UI render honest totals for the deterministic
