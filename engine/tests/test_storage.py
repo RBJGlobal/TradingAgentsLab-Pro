@@ -251,6 +251,13 @@ def test_run_mode_is_derived_from_the_complete_event(tmp_db):
     assert storage.summary_to_dict(storage.list_sessions()[0])["run_mode"] in ("full", "quick")
 
 
+def test_stub_runs_have_no_run_mode(tmp_db):
+    events = _events()
+    events[-1]["live"] = False
+    sid = storage.write_session_from_events(ticker="NVDA", trade_date="2026-11-20", events=events)
+    assert storage.get_session(sid).run_mode is None
+
+
 def test_old_database_gains_run_mode_without_a_version_bump(tmp_db):
     # A database written by an older engine: no run_mode column, one row.
     conn = sqlite3.connect(tmp_db)

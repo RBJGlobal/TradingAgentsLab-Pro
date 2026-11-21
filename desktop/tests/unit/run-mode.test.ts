@@ -8,17 +8,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const streamDebate = vi.fn();
 const reserveCostGuard = vi.fn();
+const listProviderModels = vi.fn();
+const order: string[] = [];
 
 vi.mock('../../src/lib/engine-client', async (orig) => ({
   ...(await orig<typeof import('../../src/lib/engine-client')>()),
   streamDebate: (...a: unknown[]) => streamDebate(...a),
+  listProviderModels: (...a: unknown[]) => { order.push('catalog'); return listProviderModels(...a); },
 }));
 vi.mock('../../src/lib/cost-guard', async (orig) => ({
   ...(await orig<typeof import('../../src/lib/cost-guard')>()),
-  reserveCostGuard: (...a: unknown[]) => reserveCostGuard(...a),
+  reserveCostGuard: (...a: unknown[]) => { order.push('reserve'); return reserveCostGuard(...a); },
 }));
 vi.mock('../../src/lib/secrets', () => ({
-  getSecret: async (name: string) => (name === 'llm:anthropic' ? 'sk-ant-test' : null),
+  getSecret: async (name: string) =>
+    name === 'llm:anthropic' ? 'sk-ant-test' : name === 'llm:openrouter' ? 'sk-or-test' : null,
 }));
 vi.mock('../../src/lib/webhooks', () => ({ loadWebhooks: async () => [] }));
 
@@ -33,6 +37,8 @@ import {
 beforeEach(() => {
   streamDebate.mockReset().mockResolvedValue({ close: () => {}, done: Promise.resolve() });
   reserveCostGuard.mockReset().mockResolvedValue({ reservation_id: 'r1' });
+  listProviderModels.mockReset().mockResolvedValue({ ok: true, models: [] });
+  order.length = 0;
 });
 afterEach(() => localStorage.clear());
 
@@ -95,5 +101,32 @@ describe('runAnalysis by mode', () => {
       max_tokens: 400,
       provider: 'anthropic',
     });
+  });
+});
+
+describe('OpenRouter catalog before the reservation', () => {
+  it('loads the catalog first so reserve and run see the same reasoning flags', async () => {
+    saveProConfig({ ...DEFAULT_PRO_CONFIG, runMode: 'quick' });
+    await runAnalysis(
+      { ticker: 'NVDA', trade_date: '2026-11-20', provider: 'openrouter',
+        openaiAuthKind: 'api_key', model: 'deepseek/deepseek-v4' },
+      { onEvent: () => {} },
+    );
+    expect(order).toEqual(['catalog', 'reserve']);
+  });
+
+  it('a failed catalog fetch never blocks the run', async () => {
+    listProviderModels.mockRejectedValue(new Error('offline'));
+    await runAnalysis(
+      { ticker: 'NVDA', trade_date: '2026-11-20', provider: 'openrouter',
+        openaiAuthKind: 'api_key', model: 'deepseek/deepseek-v4' },
+      { onEvent: () => {} },
+    );
+    expect(reserveCostGuard).toHaveBeenCalledOnce();
+  });
+
+  it('other providers skip it', async () => {
+    await run();
+    expect(order).toEqual(['reserve']);
   });
 });

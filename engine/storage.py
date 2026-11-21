@@ -346,7 +346,12 @@ def write_session_from_events(
         auth_kind=complete.get("auth_kind"),
         # full_debate stamps engine="full" on session.complete; live_debate
         # (Quick analysis, the Telegram bot) does not.
-        run_mode="full" if complete.get("engine") == "full" else "quick",
+        # Stub runs (no provider) are neither mode.
+        run_mode=(
+            None if not complete.get("live", False)
+            else "full" if complete.get("engine") == "full"
+            else "quick"
+        ),
     )
 
 
