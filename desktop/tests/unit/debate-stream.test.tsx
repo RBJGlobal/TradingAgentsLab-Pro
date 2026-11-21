@@ -76,3 +76,30 @@ describe('DebateStream elapsed clock', () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe('DebateStream duration hint', () => {
+  const PLAN: DebateEvent = {
+    type: 'graph.plan',
+    analysts: ['market'],
+    max_debate_rounds: 1,
+    max_risk_rounds: 1,
+  } as DebateEvent;
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows the 8 to 15 minute hint on a Full analysis', () => {
+    const { getByText } = render(
+      <DebateStream events={[START, PLAN, AGENT]} isStreaming />,
+    );
+    expect(getByText('Typically 8 to 15 minutes')).toBeTruthy();
+  });
+
+  it('shows no duration hint on a Quick analysis', () => {
+    const { queryByText } = render(
+      <DebateStream events={[START, AGENT]} isStreaming />,
+    );
+    expect(queryByText(/Typically/)).toBeNull();
+  });
+});
