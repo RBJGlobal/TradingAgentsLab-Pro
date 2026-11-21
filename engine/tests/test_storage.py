@@ -226,3 +226,56 @@ def test_concurrent_writes_dont_collide(tmp_db):
     summaries = storage.list_sessions(limit=10)
     tickers = {s.ticker for s in summaries}
     assert tickers == {"AAPL", "NVDA"}
+
+
+# ---- run_mode (Pro 1.1.10: Quick analysis vs full graph) ----------------------
+
+
+def _events(engine=None):
+    complete = {"type": "session.complete", "ticker": "NVDA", "live": True,
+                "decision": {"stance": "neutral", "conviction": 0.5, "reasoning": "r"}}
+    if engine:
+        complete["engine"] = engine
+    return [{"type": "session.start", "ticker": "NVDA"}, complete]
+
+
+def test_run_mode_is_derived_from_the_complete_event(tmp_db):
+    full = storage.write_session_from_events(ticker="NVDA", trade_date="2026-11-20",
+                                             events=_events("full"))
+    quick = storage.write_session_from_events(ticker="NVDA", trade_date="2026-11-20",
+                                              events=_events())
+    assert storage.get_session(full).run_mode == "full"
+    assert storage.get_session(quick).run_mode == "quick"
+    modes = {s.id: s.run_mode for s in storage.list_sessions()}
+    assert modes == {full: "full", quick: "quick"}
+    assert storage.summary_to_dict(storage.list_sessions()[0])["run_mode"] in ("full", "quick")
+
+
+def test_old_database_gains_run_mode_without_a_version_bump(tmp_db):
+    # A database written by an older engine: no run_mode column, one row.
+    conn = sqlite3.connect(tmp_db)
+    conn.executescript(
+        """
+        CREATE TABLE schema_version (version INTEGER NOT NULL);
+        INSERT INTO schema_version (version) VALUES (%d);
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, ticker TEXT NOT NULL, trade_date TEXT NOT NULL,
+            decision_action TEXT NOT NULL, decision_confidence REAL NOT NULL,
+            decision_reasoning TEXT NOT NULL, live INTEGER NOT NULL DEFAULT 0,
+            provider TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER,
+            estimated_cost_usd REAL, auth_kind TEXT, created_at TEXT NOT NULL,
+            events_json TEXT NOT NULL
+        );
+        INSERT INTO sessions VALUES ('old1','NVDA','2026-11-01','neutral',0.5,'r',1,
+            'anthropic','claude-sonnet-4-6',1,1,0.5,'api_key','2026-11-01T00:00:00Z','[]');
+        """ % storage.SCHEMA_VERSION
+    )
+    conn.commit()
+    conn.close()
+
+    rows = storage.list_sessions()
+    assert [(r.id, r.run_mode) for r in rows] == [("old1", None)]
+    conn = sqlite3.connect(tmp_db)
+    # Version untouched, so an older engine can still open this database.
+    assert conn.execute("SELECT version FROM schema_version").fetchone()[0] == storage.SCHEMA_VERSION
+    conn.close()

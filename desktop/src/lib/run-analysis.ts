@@ -30,7 +30,7 @@ import { getSecret } from './secrets';
 import { loadLocalConfig } from './local-llm';
 import { getOpenAICredentialsForRequest } from './oauth';
 import { loadWebhooks, type WebhookConfig } from './webhooks';
-import { assembleProConfig } from './pro-config';
+import { assembleProConfig, loadProConfig } from './pro-config';
 
 export interface RunAnalysisOptions {
   ticker: string;
@@ -99,14 +99,27 @@ export async function runAnalysis(
   // selection, effort, and token cap. It is inert for the stub path (no
   // provider) because server.py branches on the engine flag only inside its
   // `config is not None` block, so engine='pro' + no key still falls to stub.
-  const proConfig = assembleProConfig(opts.model, opts.provider);
+  //
+  // Quick analysis (runMode 'quick') instead runs the Lite-style debate:
+  // engine 'quick', no pro_config, and the simplified Cost Guard estimate
+  // (no `pro` block), which is what the engine prices that path with.
+  const proState = loadProConfig();
+  const quick = proState.runMode === 'quick';
+  const proConfig = assembleProConfig(opts.model, opts.provider, proState);
 
   let reservationId: string | undefined;
   if (providerConfig) {
-    // Send the Pro run shape so the engine prices this run with its Pro
+    // Full: send the Pro run shape so the engine prices this run with its Pro
     // full-graph estimate (per-node, deep vs quick models, round counts,
     // analyst count) and stores the mid-run USD stop on the reservation.
-    const reserveReq = buildProReserveRequest(providerConfig, proConfig, maxTokens);
+    const reserveReq = quick
+      ? {
+          model: providerConfig.model || opts.model,
+          auth_kind: providerConfig.auth.type,
+          max_tokens: maxTokens,
+          provider: providerConfig.provider,
+        }
+      : buildProReserveRequest(providerConfig, proConfig, maxTokens);
     try {
       const reservation = await reserveCostGuard(reserveReq);
       reservationId = reservation.reservation_id;
@@ -151,9 +164,9 @@ export async function runAnalysis(
       webhooks: webhookConfigs.length > 0 ? webhookConfigs : undefined,
       telegram_chat_ids:
         Object.keys(telegramChatIds).length > 0 ? telegramChatIds : undefined,
-      engine: 'pro',
-      pro_config: proConfig,
-      alpha_vantage_key: alphaVantageKey,
+      engine: quick ? 'quick' : 'pro',
+      pro_config: quick ? undefined : proConfig,
+      alpha_vantage_key: quick ? undefined : alphaVantageKey,
     },
     wrappedOnEvent,
     callbacks.onError,

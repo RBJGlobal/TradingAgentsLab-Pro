@@ -84,6 +84,15 @@ Live mode bounds:
 
 The `session.complete` event in live mode carries `live: true`, the model name, input/output token counts, and an estimated USD cost. OAuth-routed sessions report `estimated_cost_usd: 0` since they bill via subscription, not per token.
 
+### Full analysis and Quick analysis
+
+> **Pro** Trading Agents Lab Pro has a **Mode** picker on the Analyze page, next to the provider and model:
+>
+> - **Full analysis** (the default) runs the complete research graph: the analyst team calls data tools, bull and bear researchers debate, then the trader, the risk team and the portfolio manager. It uses your deep and quick models and the analyst, round, effort and token cap settings under Settings. Cost Guard uses the Pro full-graph estimate and stops the run mid-way if a cap would be passed.
+> - **Quick analysis** runs the shorter debate described above under Live mode: twelve agents on the one model you picked, in a single pass. It finishes faster and costs less, and the Full analysis settings do not apply to it. Cost Guard reserves the same worst-case estimate the Lite app uses.
+>
+> History marks each saved run as **Full** or **Quick**. Runs saved before this version show no mode. The mode you pick is remembered and also applies to batch runs.
+
 ---
 
 ## Phase 1: Analysts

@@ -304,7 +304,7 @@ export interface AnalyzeRequest {
   /** Engine selector. `'full'`/`'pro'` routes to the real LangGraph graph
    * (Pro); absent runs the free simplified engine. The free renderer never
    * sets this, so the free path is unaffected. */
-  engine?: 'full' | 'pro';
+  engine?: 'full' | 'pro' | 'quick';
   /** Pro-only knobs; ignored unless `engine` selects the Pro path. */
   pro_config?: ProConfig;
   /** Optional Alpha Vantage data key. Forwarded so the Pro engine can unlock
@@ -617,6 +617,9 @@ export interface SessionSummary {
   output_tokens: number | null;
   estimated_cost_usd: number | null;
   created_at: string;
+  /** 'full' (LangGraph graph) or 'quick' (Quick analysis / Telegram bot).
+   * null for rows saved before Pro 1.1.10, and absent from older engines. */
+  run_mode?: 'full' | 'quick' | null;
 }
 
 export interface SessionDetail extends SessionSummary {

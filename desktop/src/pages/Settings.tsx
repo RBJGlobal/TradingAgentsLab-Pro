@@ -1947,6 +1947,10 @@ function ProAnalysisTab() {
 
   return (
     <div className={styles.formCard}>
+      <p className={styles.formHint} data-testid="pro-settings-full-only">
+        These settings shape a Full analysis. Quick analysis (picked under Mode
+        on Analyze) runs a single-model debate and does not use them.
+      </p>
       <fieldset className={styles.formGroup}>
         <legend className={styles.formLegend}>Analysts</legend>
         <p className={styles.formHint}>

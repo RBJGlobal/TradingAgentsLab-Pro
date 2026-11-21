@@ -576,6 +576,9 @@ def build_app(*, token: str) -> FastAPI:
             # the full-graph path is opt-in and the free path stays byte-for-byte
             # identical. `pro_config` carries the deep/quick model split, debate
             # round counts, effort, analyst selection, and an optional token cap.
+            # "quick" (Quick analysis, Pro 1.1.10+) and an absent field both
+            # run the Lite-style live_debate below: one model, twelve agents,
+            # the simplified Cost Guard estimate, saved with run_mode="quick".
             engine_mode = str(start.get("engine") or "").lower()
             is_pro = engine_mode in ("full", "pro")
             pro_config_raw = start.get("pro_config") or {}

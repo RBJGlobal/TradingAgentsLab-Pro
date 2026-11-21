@@ -21,6 +21,13 @@ import {
   type SpendState,
 } from '../lib/cost-guard';
 import { runAnalysis } from '../lib/run-analysis';
+import {
+  RUN_MODES,
+  RUN_MODE_LABEL,
+  loadProConfig,
+  saveProConfig,
+  type RunMode,
+} from '../lib/pro-config';
 import { buildTranscriptMarkdown } from '../lib/transcript';
 import { listSecrets } from '../lib/secrets';
 import { consumePendingTicker } from '../lib/handoff';
@@ -92,6 +99,14 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
   const [assetClass, setAssetClass] = useState<'equity' | 'crypto' | null>(null);
   const [events, setEvents] = useState<DebateEvent[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  // Full analysis (LangGraph graph) or Quick analysis (Lite-style debate).
+  // Saved with the other Pro run settings, so batch runs use it too; read
+  // fresh by runAnalysis at run time.
+  const [runMode, setRunMode] = useState<RunMode>(() => loadProConfig().runMode);
+  const onSelectRunMode = (mode: RunMode) => {
+    setRunMode(mode);
+    saveProConfig({ ...loadProConfig(), runMode: mode });
+  };
   const [streamError, setStreamError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   /**
@@ -881,14 +896,43 @@ function Analyze({ resetSignal = 0 }: AnalyzeProps) {
       <header className={styles.pageHeader}>
         <div className={styles.pageHeaderTitleBlock}>
           <h1 className={styles.pageTitle}>Analyze</h1>
-          <p className={styles.pageSubtitle}>
-            Run <strong>the Diligence</strong> on a ticker. Twelve AI agents
-            (analyst, researcher, trader, risk-manager) deliberate from
-            independent angles and converge on a recommendation. Educational
-            research only; not investment advice.
-          </p>
+          {runMode === 'quick' ? (
+            <p className={styles.pageSubtitle} data-testid="run-mode-subtitle">
+              <strong>Quick analysis</strong> on a ticker: twelve AI agents
+              (analyst, researcher, trader, risk-manager) debate in a single
+              pass on the model you pick, and converge on a committee
+              assessment. Faster and lower cost than the full analysis.
+              Educational research only; not investment advice.
+            </p>
+          ) : (
+            <p className={styles.pageSubtitle} data-testid="run-mode-subtitle">
+              Run <strong>the Diligence</strong> on a ticker: the full research
+              graph (analyst team, bull and bear researchers, trader, risk team,
+              portfolio manager) deliberates from independent angles and
+              converges on a committee assessment. Educational research only;
+              not investment advice.
+            </p>
+          )}
         </div>
         <div className={styles.pageHeaderProvider}>
+          <label className={styles.providerLabel} htmlFor="run-mode">
+            Mode
+          </label>
+          <select
+            id="run-mode"
+            className={styles.providerSelect}
+            value={runMode}
+            onChange={(e) => onSelectRunMode(e.target.value as RunMode)}
+            disabled={isStreaming}
+            title="Full analysis runs the complete research graph. Quick analysis runs a shorter single-model debate."
+            data-testid="run-mode-select"
+          >
+            {RUN_MODES.map((m) => (
+              <option key={m} value={m}>
+                {RUN_MODE_LABEL[m]}
+              </option>
+            ))}
+          </select>
           <label className={styles.providerLabel} htmlFor="run-with">
             Run with
           </label>

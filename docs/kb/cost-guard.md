@@ -83,6 +83,8 @@ A three-second anti-tamper countdown disables the Override button on first appea
 
 > **Pro** Trading Agents Lab Pro runs the full multi-agent graph, where analysts call data tools as many times as they need and no single step has a fixed length. No number computed before the run can be a true maximum, so the Pro estimate is a realistic figure instead: about 1.4 times what a typical run costs. It is built node by node: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model. Extra debate or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output. With all four analysts, one round of each debate and Claude Sonnet 4.6 as both models, the estimate is about $1.31; with only the market analyst (the setting a new install starts with) it is about $0.75. The real protection is the mid-run stop below.
 
+> **Pro** A **Quick analysis** (Mode picker on Analyze) is the shorter single-model debate, so Cost Guard reserves it like the Lite app does: a true worst case for twelve agents on your one model, including the extra thinking room reasoning models get. The full-graph estimate above applies only to a Full analysis.
+
 ---
 
 ## The mid-run stop

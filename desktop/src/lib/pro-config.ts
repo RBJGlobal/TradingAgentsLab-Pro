@@ -85,7 +85,37 @@ export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
   yfinance: 'Yahoo Finance',
 };
 
+/** How a Pro run is analyzed (Pro 1.1.10+).
+ *
+ * - `full`: the real LangGraph graph (analyst team with tools, bull/bear
+ *   research debate, trader, risk team, portfolio manager), deep/quick
+ *   model split, Pro Cost Guard estimate.
+ * - `quick`: the Lite app's simplified debate on the engine's live_debate
+ *   path: twelve agents on the one selected model, a single pass, the
+ *   simplified Cost Guard estimate. The analyst / round / effort / token cap
+ *   settings below do not apply to it.
+ */
+export const RUN_MODES = ['full', 'quick'] as const;
+export type RunMode = (typeof RUN_MODES)[number];
+
+export const RUN_MODE_LABEL: Record<RunMode, string> = {
+  full: 'Full analysis',
+  quick: 'Quick analysis',
+};
+
+/** Which analysis produced a row: 'Full' (LangGraph graph) or 'Quick'
+ * (Quick analysis or a Telegram bot run). Rows saved before Pro 1.1.10 have
+ * no mode and show none. */
+export function runModeTag(mode: string | null | undefined): string {
+  if (mode === 'quick') return 'Quick · ';
+  if (mode === 'full') return 'Full · ';
+  return '';
+}
+
 export interface ProConfigState {
+  /** Full graph or Quick analysis. Default `full` (the Pro behavior before
+   * run modes existed). */
+  runMode: RunMode;
   /** null = use the primary model the user picked on Analyze (the deep model). */
   deepModel: string | null;
   quickModel: string | null;
@@ -100,6 +130,7 @@ export interface ProConfigState {
 }
 
 export const DEFAULT_PRO_CONFIG: ProConfigState = {
+  runMode: 'full',
   deepModel: null,
   quickModel: null,
   effort: null,
@@ -126,12 +157,16 @@ export function loadProConfig(): ProConfigState {
     const newsSource = (NEWS_SOURCES as readonly string[]).includes(parsed.newsSource as string)
       ? (parsed.newsSource as NewsSource)
       : DEFAULT_PRO_CONFIG.newsSource;
+    const runMode = (RUN_MODES as readonly string[]).includes(parsed.runMode as string)
+      ? (parsed.runMode as RunMode)
+      : DEFAULT_PRO_CONFIG.runMode;
     return {
       ...DEFAULT_PRO_CONFIG,
       ...parsed,
       // Never allow an empty analyst set (a run with zero analysts is invalid).
       selectedAnalysts: analysts.length > 0 ? analysts : DEFAULT_PRO_CONFIG.selectedAnalysts,
       newsSource,
+      runMode,
     };
   } catch {
     return { ...DEFAULT_PRO_CONFIG };

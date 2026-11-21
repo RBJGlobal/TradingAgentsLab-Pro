@@ -8,6 +8,7 @@ import {
   type SessionDetail,
   type SessionSummary,
 } from '../lib/engine-client';
+import { runModeTag } from '../lib/pro-config';
 import { stanceLabel, stanceLean } from '../lib/stance';
 import { buildTranscriptMarkdown } from '../lib/transcript';
 
@@ -261,7 +262,7 @@ function History() {
                 </span>
                 {detail.live ? (
                   <span className={styles.detailMetaPill}>
-                    Live · {detail.provider ?? 'openai'} · {detail.model ?? '?'}
+                    Live · {runModeTag(detail.run_mode)}{detail.provider ?? 'openai'} · {detail.model ?? '?'}
                   </span>
                 ) : (
                   <span className={styles.detailMetaPillNeutral}>Stub debate</span>
@@ -373,7 +374,7 @@ function History() {
                   </span>
                   {s.live && (
                     <span className={styles.livePill}>
-                      Live · {s.provider ?? 'openai'} · {s.model ?? '?'}
+                      Live · {runModeTag(s.run_mode)}{s.provider ?? 'openai'} · {s.model ?? '?'}
                     </span>
                   )}
                 </div>

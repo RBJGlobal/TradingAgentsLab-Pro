@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     estimated_cost_usd REAL,
     auth_kind TEXT,
     created_at TEXT NOT NULL,
-    events_json TEXT NOT NULL
+    events_json TEXT NOT NULL,
+    run_mode TEXT
 );
 
 -- `provider` and `auth_kind` were added in v2. Older databases get
@@ -141,6 +142,13 @@ def _do_initialize() -> None:
             conn.execute("ALTER TABLE sessions ADD COLUMN provider TEXT")
         if "auth_kind" not in cols:
             conn.execute("ALTER TABLE sessions ADD COLUMN auth_kind TEXT")
+        # run_mode ("full" = the LangGraph graph, "quick" = the Lite-style
+        # live debate). Added without a schema_version bump on purpose: an
+        # older engine refuses a NEWER version, so a bump would lock a user
+        # who downgrades out of their History. Older engines name their
+        # INSERT columns, so they simply leave this NULL.
+        if "run_mode" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN run_mode TEXT")
         # Bump the stored version forward if we just migrated up. Never
         # downgrade — a v2 db running on a v1 engine is rejected above.
         conn.execute(
@@ -208,6 +216,9 @@ class SessionSummary:
     output_tokens: Optional[int]
     estimated_cost_usd: Optional[float]
     created_at: str
+    # "full" | "quick", or None for rows saved before run modes existed
+    # (Pro runs before 1.1.10 were all full-graph from the Analyze page).
+    run_mode: Optional[str]
 
 
 @dataclass
@@ -235,6 +246,7 @@ def write_session(
     output_tokens: Optional[int] = None,
     estimated_cost_usd: Optional[float] = None,
     auth_kind: Optional[str] = None,
+    run_mode: Optional[str] = None,
 ) -> Optional[str]:
     """Persist a completed session. Returns the new id, or None on failure.
 
@@ -258,9 +270,10 @@ def write_session(
                     id, ticker, trade_date,
                     decision_action, decision_confidence, decision_reasoning,
                     live, provider, model, input_tokens, output_tokens,
-                    estimated_cost_usd, auth_kind, created_at, events_json
+                    estimated_cost_usd, auth_kind, created_at, events_json,
+                    run_mode
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -283,6 +296,7 @@ def write_session(
                     auth_kind,
                     created_at,
                     json.dumps(events, separators=(",", ":")),
+                    run_mode,
                 ),
             )
             conn.commit()
@@ -330,6 +344,9 @@ def write_session_from_events(
         output_tokens=complete.get("output_tokens"),
         estimated_cost_usd=complete.get("estimated_cost_usd"),
         auth_kind=complete.get("auth_kind"),
+        # full_debate stamps engine="full" on session.complete; live_debate
+        # (Quick analysis, the Telegram bot) does not.
+        run_mode="full" if complete.get("engine") == "full" else "quick",
     )
 
 
@@ -344,7 +361,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                     SELECT id, ticker, trade_date, decision_action,
                            decision_confidence, decision_reasoning,
                            live, provider, model, input_tokens, output_tokens,
-                           estimated_cost_usd, created_at
+                           estimated_cost_usd, created_at, run_mode
                     FROM sessions
                     WHERE ticker = ?
                     ORDER BY created_at DESC
@@ -358,7 +375,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                     SELECT id, ticker, trade_date, decision_action,
                            decision_confidence, decision_reasoning,
                            live, provider, model, input_tokens, output_tokens,
-                           estimated_cost_usd, created_at
+                           estimated_cost_usd, created_at, run_mode
                     FROM sessions
                     ORDER BY created_at DESC
                     LIMIT ?
@@ -381,6 +398,7 @@ def list_sessions(*, limit: int = 50, ticker: Optional[str] = None) -> list[Sess
                 output_tokens=row["output_tokens"],
                 estimated_cost_usd=row["estimated_cost_usd"],
                 created_at=row["created_at"],
+                run_mode=row["run_mode"],
             )
             for row in rows
         ]
@@ -399,7 +417,7 @@ def get_session(session_id: str) -> Optional[SessionDetail]:
                 SELECT id, ticker, trade_date, decision_action,
                        decision_confidence, decision_reasoning,
                        live, provider, model, input_tokens, output_tokens,
-                       estimated_cost_usd, created_at, events_json
+                       estimated_cost_usd, created_at, events_json, run_mode
                 FROM sessions
                 WHERE id = ?
                 """,
@@ -428,6 +446,7 @@ def get_session(session_id: str) -> Optional[SessionDetail]:
             output_tokens=row["output_tokens"],
             estimated_cost_usd=row["estimated_cost_usd"],
             created_at=row["created_at"],
+            run_mode=row["run_mode"],
             events=events,
         )
     except Exception as exc:  # noqa: BLE001
