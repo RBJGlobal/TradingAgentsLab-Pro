@@ -1,6 +1,10 @@
+---
+order: 100
+---
+
 # Cost Guard
 
-*Stacked daily / weekly / monthly USD caps and an optional sessions-per-day rate cap. On by default, can be turned off. Override per-run.*
+*Stacked daily / weekly / monthly USD caps and an optional sessions-per-day cap. On by default: $5.00 a day, $15.00 a week and $45.00 a month, with no sessions cap. Override per run.*
 
 > **For educational research and paper trading. This is not investment advice.**
 
@@ -8,156 +12,180 @@
 
 ## What it is
 
-Cost Guard is a quota layer that sits in front of the live LLM debate. Before every paid-API session, the engine estimates the cost of the debate and checks it against the caps you've set. If the cost would push any cap over the limit, the request is blocked and a modal opens, you can either **Cancel** or **Override and continue**. The override is per-run; it does not raise the cap.
+Cost Guard is a quota layer that sits in front of every paid analysis. Before an analysis starts, the engine estimates its cost and checks it against the caps you have set. If the estimate would push any cap over its limit, the request is blocked and a dialog opens. You can **Cancel**, or **Override and continue**. The override applies to that run only; it does not raise the cap.
 
-The four cap dimensions:
+In a **Full analysis**, Cost Guard also watches your spending while the analysis runs and stops it if continuing would take you past a cap (see "The mid-run stop" below).
+
+The four limits:
 
 | Dimension | What it limits |
 |---|---|
-| **Daily** | USD spent across all debates that started today (UTC) |
-| **Weekly** | USD spent across debates that started this week (since Monday 00:00 UTC) |
-| **Monthly** | USD spent across debates that started this calendar month (UTC) |
-| **Sessions per day** | Count of debates started today, regardless of cost |
+| **Daily** | USD spent across analyses that started today (UTC) |
+| **Weekly** | USD spent across analyses that started this week (since Monday 00:00 UTC) |
+| **Monthly** | USD spent across analyses that started this calendar month (UTC) |
+| **Sessions per day** | The number of analyses started today, regardless of cost |
 
-A cap of `0` means **disabled**. You can enable any subset, e.g. monthly USD only, or sessions-per-day only.
+A cap of `0` means **disabled**. You can enable any subset, for example monthly USD only, or sessions per day only.
 
-> **Pro** A new Trading Agents Lab Pro install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. Updating from an earlier version: if your caps were still the old defaults ($1.00 a day, $5.00 a week, $15.00 a month, never changed), they are raised once to the new defaults, because a Pro analysis with all four analysts on Claude Sonnet 4.6 is estimated at about $1.31 and would not fit a $1.00 daily cap. Caps you set yourself are kept as they were. A market-only analysis (the setting a new install starts with) is estimated at about $0.75.
+### Defaults
+
+A new install starts with a **$5.00 daily**, **$15.00 weekly** and **$45.00 monthly** cap, and no sessions-per-day cap. These are sized so that one Full analysis fits: a Full analysis with all four analysts on Claude Sonnet 4.6 is estimated at about $1.31, and one with only the Market analyst (the setting a new install starts with) at about $0.75.
+
+If you update from an earlier version and your caps were still the old defaults ($1.00 a day, $5.00 a week, $15.00 a month, never changed), they are raised once to the new defaults. Caps you set yourself are kept as they were.
 
 ---
 
-## Why we built it
+## Why it exists
 
-LLM costs scale with model choice + token usage in ways that are easy to underestimate. A single debate with gpt-5 or Claude Opus 4.7 across 12 agents can easily cost more than you'd expect. Cost Guard turns "did I just spend $20 on three debates?" into a deliberate decision rather than a billing surprise.
+LLM costs scale with the model and the number of calls in ways that are easy to underestimate. A Full analysis makes many model calls, and a larger model or extra debate rounds multiply that. Cost Guard turns "did I just spend $20 on three analyses?" into a deliberate decision instead of a billing surprise.
 
-It also protects against accidental loops, runaway scripts, and the occasional UI glitch that fires multiple debates. The rate cap (sessions-per-day) catches what the USD cap might miss.
+It also protects against accidental loops and the occasional glitch that starts several analyses. The sessions-per-day cap catches what a USD cap might miss.
 
 ---
 
 ## Where to go in the UI
 
-**Settings → Cost Guard**.
+**Settings → Cost Guard** contains:
 
-Top of the page: a **status row** showing your current spend totals (daily / weekly / monthly USD, sessions today) with color bars indicating how close you are to each cap. Green = below 50%, amber = 50-90%, red = 90%+.
+- **Budget caps enabled**, a toggle. When it is off, all paid analyses are allowed regardless of caps.
+- **API cost caps (USD)**: **Daily**, **Weekly** and **Monthly** inputs. Set one to 0 to disable that window.
+- **Session rate cap**: **Per day**. Set to 0 to disable.
+- **Current period spend**: one bar per window, with a **Refresh** link. The sessions bar appears only when a sessions cap is set.
+- **Save**. You can change caps at any time, including between analyses.
 
-Below that: an **Enable / Disable** toggle and a form with four numeric inputs (one per cap dimension). Caps update via PUT on save. Settings can be changed at any time, including mid-session.
+The **Spend** pill in the status strip at the top of the app shows today's spend against your daily cap. While an analysis runs, the pill adds the running cost of that analysis (for example `$0.42 / $5.00 + $0.0312`), and for a ChatGPT sign-in run it shows *subscription*.
 
 ---
 
 ## What counts as spend?
 
-The engine computes a per-session cost using a static **cost rate table** (`engine/llm_providers.py`). Rates are USD per million input/output tokens, refreshed manually when providers change them. Conservative numbers preferred.
+The engine prices each session from a built-in rate table (USD per million input and output tokens), updated by hand when providers change prices. When a price is uncertain the table errs high.
 
-| Provider / Auth | Cost behavior |
+| Provider / auth | Cost behavior |
 |---|---|
-| API-key on any per-token-billed provider | Real token usage × rate table. Logged on `session.complete`. |
-| **OpenAI OAuth** (ChatGPT subscription) | **$0**. Subscription billing happens outside our app; we record 0 so the cost ledger only reflects per-token API spend. |
-| **Local LLM** (Ollama / LM Studio) | **$0**. Local sessions cost nothing in real dollars. |
-| **OpenRouter** | Priced at the underlying vendor's own rate when the app knows it (for example `openai/gpt-4o-mini` at the gpt-4o-mini rate), otherwise at a deliberately high family estimate. Live OpenRouter prices are not loaded yet. |
+| API key on any per-token provider | Real token usage times the rate table. |
+| **OpenAI sign-in** (ChatGPT plan) | **$0.** Billing happens on your ChatGPT plan, outside the app. The ledger records 0, so it reflects only per-token API spend. |
+| **Local LLM** (Ollama / LM Studio) | **$0.** |
+| **OpenRouter** | Priced at the rate OpenRouter publishes for that model, read when the model list loads. Before the list has loaded (for example right after the app starts), the model is priced from the app's own rate for the same vendor model, or from a deliberately high estimate if there is none. |
+| **A model newer than your copy of the app** | Priced from its model family at a deliberately high estimate (for example, $15 and $75 per million input and output tokens for an unknown Claude Opus class model). Never `0.0`: an unpriced model can make Cost Guard stop sooner, never later. A dated model name (such as `claude-haiku-4-5-20251001`) uses the rate of its plain name. |
 
-**Unknown models are never priced at $0.** A model with no row in the rate table (a newly released model, a dated model id, an unfamiliar OpenRouter vendor) is priced from a deliberately high estimate for its family, for example $15 per million input tokens and $75 per million output tokens for an unrecognised Claude model or an unknown vendor. Over-estimating is the safe direction: Cost Guard stops sooner, never later. A dated id such as `claude-haiku-4-5-20251001` uses the `claude-haiku-4-5` rate.
+Sign-in and Local sessions **skip** the three USD caps but **do count** toward the sessions-per-day cap.
 
-OAuth and Local sessions **skip** the three USD caps but **do count** against the sessions-per-day rate cap, even free runs benefit from quota discipline on runaway debate counts.
+A session that stops partway (a cap, an error, or you pressing Stop) is billed for the tokens it already used, and that amount counts toward your daily, weekly and monthly totals even though the run does not appear in History.
 
 ---
 
-## The pre-debate reservation flow
+## The pre-run reservation
 
-Before a live debate kicks off, the renderer:
+Before a paid analysis starts, the app:
 
-1. **Estimates worst-case cost** for the session (assumes every agent maxes out its output budget, transcript grows triangularly across agents).
-2. **POSTs `/cost-guard/reserve`** with `{model, auth_kind, max_tokens, provider}`.
-3. If the reservation succeeds → the debate proceeds with a `reservation_id` threaded on the WebSocket start frame.
-4. If the reservation fails with `CostGuardBlocked` → the **Cost Guard modal** opens.
+1. **Estimates its cost.** How it does so depends on the mode (below).
+2. **Reserves** that amount with the engine. The reservation is checked against your caps, and the check is atomic.
+3. If it fits, the analysis starts. If it does not, the **Cost Guard dialog** opens.
 
-The modal shows:
-- Which dimension would be exceeded (daily / weekly / monthly / rate)
-- Your current spend in that dimension
-- The configured cap
-- The estimated cost of the requested run
+### Full analysis estimate
+
+A Full analysis runs a multi-agent graph where analysts call data tools as many times as they need, and no single step has a fixed length. No number computed before the run can be a true maximum, so the estimate is a realistic figure: about **1.4 times what a typical run costs**.
+
+It is built step by step: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model (both are the model you picked on Analyze). Extra research or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output.
+
+### Quick analysis estimate
+
+A **Quick analysis** (the shorter single-model debate) has a fixed shape, so Cost Guard reserves a true worst case: twelve agents on your one model, each using its whole output budget, with the transcript growing as each agent reads the ones before it. For a reasoning model, each agent's output budget includes its thinking allowance (1,200 extra tokens), because thinking is billed as output. A Quick analysis has no mid-run stop; the reservation is its protection.
+
+### The dialog
+
+The dialog is titled **Budget cap reached** (or **Session rate cap reached**) and shows:
+
+- Which limit would be exceeded
+- Your spend against each enabled cap
+- The most the analysis may cost
 
 You then choose:
-- **Cancel**, the debate aborts. No tokens spent.
-- **Override and continue**, the renderer re-reserves with `override=true`. The session runs, and the cost is added to the totals just like any other run. **The cap itself does not change.**
 
-A three-second anti-tamper countdown disables the Override button on first appearance so you can't accidentally double-click through it. The Cancel button is always enabled.
+- **Cancel**: the analysis does not run. Nothing is spent. Pressing Escape also cancels.
+- **Override and continue**: the app reserves again with the override flag. The analysis runs, and its cost is added to your totals like any other. **The cap itself does not change.**
 
-> **Pro** Trading Agents Lab Pro runs the full multi-agent graph, where analysts call data tools as many times as they need and no single step has a fixed length. No number computed before the run can be a true maximum, so the Pro estimate is a realistic figure instead: about 1.4 times what a typical run costs. It is built node by node: each analyst you selected, every bull and bear turn, the research manager, the trader, every risk-analyst turn, the portfolio manager, and the final thesis-scoring step. The research manager and portfolio manager are priced at your **deep** model and every other step at your **quick** model. Extra debate or risk rounds cost more than the round before, because each new turn reads the whole conversation so far. Models that think before they answer (for example Claude Sonnet 5.5 or gpt-5) get 2.5 times the output budget, since thinking is billed as output. With all four analysts, one round of each debate and Claude Sonnet 4.6 as both models, the estimate is about $1.31; with only the market analyst (the setting a new install starts with) it is about $0.75. The real protection is the mid-run stop below.
-
-> **Pro** A **Quick analysis** (Mode picker on Analyze) is the shorter single-model debate, so Cost Guard reserves it like the Lite app does: a true worst case for twelve agents on your one model, including the extra thinking room reasoning models get. The full-graph estimate above applies only to a Full analysis.
+The override button is disabled for three seconds after the dialog opens, with a visible countdown, so a double-click cannot skip past it. Cancel is always enabled.
 
 ---
 
 ## The mid-run stop
 
-> **Pro** Because the estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before every model call, it checks whether that call could push your spending past an enabled cap, using the same prices that get recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: "Stopped: This run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."
->
-> - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left. The room is rechecked after each step of the analysis, so a run started meanwhile is taken into account, and each run's real spend so far counts against the room the others see. A run that costs more than its estimate but stays under your caps finishes normally.
-> - **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is off or no USD cap is set.
-> - **ChatGPT sign-in (OAuth) runs** cost $0 per token, so they have no dollar stop. The optional token cap in Settings still applies.
->
-> If the final thesis-scoring step could cross the limit, it is skipped and the analysis ends without the strength bars. **A run that stops early still counts:** what it spent up to that point is added to your daily, weekly and monthly totals, even though it does not appear in History.
+Because a Full analysis estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before each model call, it checks whether one more call as large as the largest so far could push your spending past a limit, using the same prices that are recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: *"Stopped: This run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."*
+
+- **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left. The room is rechecked after each step of the analysis, so an analysis started in the meantime is taken into account, and each run's real spend so far counts against the room the others see. A run that costs more than its estimate but stays under your caps finishes normally.
+- **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is turned off or no USD cap is set. The message reads *"Stopped: This run spent $X, about three times its estimate of $Y, so Cost Guard ended it as a likely runaway."*
+- **ChatGPT sign-in and Local runs** cost $0 per token, so they have no dollar stop. The optional token cap (**Settings → Analysis**, **Max tokens per run**) still applies to a Full analysis.
+
+If the final thesis-scoring step could cross the limit, it is skipped and the analysis ends without the thesis strength bars. A run stopped early produces no committee assessment, but what it spent is added to your totals.
 
 ---
 
-## The TOCTOU-safe reservation
+## Atomic reservations and expiry
 
-Cost Guard uses a **time-of-check-to-time-of-use safe** reservation pattern: the database insert of the reservation row is the atomic check. Two simultaneous debates cannot both squeeze under the same cap, the first to insert wins; the second sees the bumped totals and gets blocked.
+Cost Guard reserves the estimate **atomically**: the database insert of the reservation is the check itself. Two analyses started at the same moment cannot both squeeze under the same cap. The first to insert wins, and the second sees the updated totals and is blocked.
 
-Reservations have a **15-minute TTL**. If a debate ends cleanly, the reservation is finalized with real token usage replacing the worst-case estimate. If the renderer crashes mid-debate, the reservation expires and the slot frees up. A background sweeper cleans expired reservations on every state read.
+When an analysis ends, its reservation is finalized with the real token usage in place of the estimate. A reservation also has a lifetime, so a crash cannot hold your budget forever:
 
-> **Pro** A Trading Agents Lab Pro reservation lives for **60 minutes**, because a full-graph analysis can take 6 to 11 minutes at the default settings and longer with extra rounds. If the app crashes mid-run, the reservation frees itself within the hour. A run that lasts longer than its reservation still records what it really spent.
+- A **Full analysis** reservation lives **60 minutes**, because a Full analysis can take 6 to 11 minutes at the default settings and longer with extra rounds.
+- A **Quick analysis** reservation lives **15 minutes**.
+
+If the app is killed mid-run, the reservation frees itself when it expires. A run that lasts longer than its reservation still records what it really spent.
 
 ---
 
 ## When to use which cap
 
-Tune to your risk tolerance:
+Tune the caps to your comfort:
 
-- **Strict daily cap (e.g. $1/day)**, pairs well with `gpt-4o-mini`/`claude-haiku-4-5` and frequent experimentation. ~200 debates/day at this budget.
-- **Monthly cap only (e.g. $30/month)**, pairs with mixed-model use; lets you have expensive days as long as the month averages out.
-- **Sessions-per-day cap (e.g. 20)**, disciplines OAuth + Local users where USD caps don't fire. Also a sane secondary cap alongside USD limits.
-- **All four enabled**, paranoid mode. Useful for long-running unattended scenarios.
+- **A strict daily cap (for example $2 a day)** suits frequent Quick analyses or Market-only Full analyses.
+- **A monthly cap only (for example $30 a month)** suits mixed use and lets you have an expensive day as long as the month stays in budget.
+- **A sessions-per-day cap (for example 20)** disciplines sign-in and Local users, whose USD caps never fire. It is also a sensible second cap beside the USD limits.
+- **All four enabled** is the strictest setting, useful for unattended or shared use.
 
 ---
 
-## What does NOT count as spend
+## What does not count as spend
 
-- **Stub debates** (no provider configured), never charged. They run for free against the canned content.
-- **OAuth debates**, subscription billing is out-of-band. We record $0.
-- **Local LLM debates**, $0.
-- **Failed sessions**, if the LLM provider errors before any tokens are spent, the reservation is finalized at 0. A session that stops part way through (a cap, an error, or you pressing Stop) is billed for the tokens it already used.
+- **Stub analyses** (no provider configured) are never charged.
+- **ChatGPT sign-in analyses** are recorded at $0. Billing is on your ChatGPT plan.
+- **Local LLM analyses** are $0.
+- **Failed sessions**: if the provider errors before any tokens are spent, the reservation is finalized at 0.
 
 ---
 
 ## Reading the spend bars
 
-The status row at the top of the Cost Guard tab shows each cap dimension as a bar. The bar color reflects "how close are you to this cap":
+The bars under **Current period spend** show how close you are to each cap:
 
-| Color | % of cap used | What it means |
+| Color | Share of the cap used | Meaning |
 |---|---|---|
-| 🟢 Green | 0-49% | Plenty of headroom. |
-| 🟡 Amber | 50-89% | You're past halfway. Next runs may push you near the limit. |
-| 🔴 Red | 90-100% | You're at or above the cap. Next live debate will be blocked. |
+| Green | Under 80% | Plenty of room. |
+| Amber | 80% to 99% | You are close to the limit. |
+| Red | 100% | You are at or above the cap. The next paid analysis will be blocked. |
 
-For unset caps (value = 0 / disabled), the bar shows the raw spend with no fill, just a number, no progress visualization.
+For a window with its cap set to 0, the bar shows the raw spend and *cap disabled*.
+
+The **Spend** pill in the status strip uses its own thresholds for the daily cap: green under 50%, amber from 50% to 89%, red from 90%.
 
 ---
 
 ## Resetting spend
 
-Spend totals are **calendar windows**, not user-resettable values. They reset automatically as time passes:
+Spend totals are **calendar windows**, not values you can reset. They roll over automatically:
 
-- Daily totals reset at **00:00 UTC**.
-- Weekly totals reset at 00:00 UTC each Monday.
-- Monthly totals reset at 00:00 UTC on the first day of each month.
+- The daily total resets at **00:00 UTC**.
+- The weekly total resets at **00:00 UTC each Monday**.
+- The monthly total resets at **00:00 UTC on the first day of each month**.
 
-There is **no manual reset**, by design, so spend history can't be wiped to dodge a cap. If you need to forget historical data entirely, you can quit the app and delete `sessions.db` (plus any `sessions.db-wal` and `sessions.db-shm` beside it). The installed app keeps it at `~/Library/Application Support/Trading Agents Lab Pro/sessions.db`; running from source, it is `<repo>/data/sessions.db`. See [security-and-storage.md](security-and-storage.md). This is destructive and not recommended; debate history is the same DB.
+There is **no manual reset**, by design, so spend history cannot be wiped to get around a cap. If you need to forget all history, you can quit the app and delete `sessions.db` (plus any `sessions.db-wal` and `sessions.db-shm` beside it). The installed app keeps it at `~/Library/Application Support/Trading Agents Lab Pro/sessions.db`; running from source, it is `<repo>/data/sessions.db`. See [security-and-storage.md](security-and-storage.md). This is destructive and not recommended; your History is the same database.
 
 ---
 
 ## Tracking historical spend
 
-The History page shows per-session `estimated_cost_usd` next to each entry. Sort by date or by cost to see what your expensive runs were. This is independent of the Cost Guard windows, History never expires.
+The History page shows each session's estimated cost, and you can sort by date or by **Most expensive**. This is independent of the Cost Guard windows: History does not expire.
 
 ---
 
@@ -167,9 +195,9 @@ For developers integrating against the engine:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /cost-guard/state` | Current spend + config |
-| `PUT /cost-guard/config` | Update caps + enable/disable |
-| `POST /cost-guard/check` | Dry-run: would this debate be blocked? |
-| `POST /cost-guard/reserve` | Atomic check + reservation; returns `reservation_id` or 402 `CostGuardBlocked` |
+| `GET /cost-guard/state` | Current spend and config |
+| `PUT /cost-guard/config` | Update caps and the enable toggle |
+| `POST /cost-guard/check` | Dry run: would this analysis be blocked? |
+| `POST /cost-guard/reserve` | Atomic check and reservation; returns a `reservation_id`, or a 402 `CostGuardBlocked` |
 
-Full request/response shapes in [docs/api.md](../api.md).
+Request and response shapes are in [docs/api.md](https://github.com/RBJGlobal/TradingAgentsLab-Pro/blob/main/docs/api.md).

@@ -1,167 +1,142 @@
+---
+order: 150
+---
+
 # Troubleshooting
 
-*Common problems and how to fix them.*
+*Common problems in Trading Agents Lab Pro and how to fix them.*
+
+> **For educational research and paper trading. This is not investment advice.**
 
 ---
 
 ## Engine problems
 
-### "Engine starting, sidecar handshake pending" never clears
+### "Engine starting" never clears
 
-The Python sidecar didn't start or didn't emit its handshake line.
+The Analyze page shows "Engine starting, please wait. Python sidecar is coming online." while the engine starts, and the **Engine** pill at the top shows "starting…". This normally clears within a few seconds of launch.
 
-**Steps:**
+If it does not:
 
-1. Check that the engine venv exists:
-   ```bash
-   ls engine/.venv/bin/python
-   ```
-   If missing, run:
-   ```bash
-   python3.13 -m venv engine/.venv
-   source engine/.venv/bin/activate
-   pip install -r engine/requirements.txt
-   ```
-
-2. Try starting the engine manually to see the error:
-   ```bash
-   engine/.venv/bin/python -m engine
-   ```
-   The first line of stdout should be JSON `{"port": ..., "token": "..."}`. If instead you see a Python traceback, that is the problem.
-
-3. Run the smoke test for a full self-check:
-   ```bash
-   bash tools/dev-smoke.sh
-   ```
-   This starts the engine, exercises all endpoints, and prints pass/fail for each assertion. Any failures include the relevant output.
-
-### "Engine failed to start: \<message>"
-
-The Analyze page shows this in the helper text when `getHealth()` fails after the handshake.
-
-Common causes:
-- Port conflict, another process is already on the randomly chosen port (rare, since the port is dynamic).
-- `requirements.txt` not installed, the venv is missing `fastapi` or `uvicorn`. Reinstall with `pip install -r engine/requirements.txt`.
-- Python version mismatch, the engine requires Python 3.13. Check `engine/.venv/bin/python --version`.
+1. Click the **⏻** button at the top right and choose **Restart** ("Relaunch with a fresh engine").
+2. If that does not help, choose **Shut down** from the same menu, then open the app again from the Applications folder.
+3. If the Analyze page says "Engine could not start after several retries" followed by a message, try a restart once more, then use **Help → Contact Support** and include that message.
 
 ---
 
-## Debate / stream problems
+## Analysis problems
 
-### Debate runs but shows stub messages even after configuring a provider
+### The analysis runs but shows a stub or canned debate
 
-The Analyze page should inject your stored credentials automatically. If you still see stub messages:
+The **Run with** dropdown on the Analyze page shows **Stub debate (no LLM configured)** when no provider is set up, and the helper text under the Analyze button says "Stub debate. Paste an LLM key in Settings to switch to live agents." The stub debate is free, uses placeholder content, and its reasoning text says "Stub canned debate" so it is easy to recognize.
 
-1. Check that the **"Run with"** dropdown in the Analyze header shows your provider (not "Stub mode"). If only stub is offered, the credentials weren't successfully decrypted, try **Replace** in Settings to re-save the key.
-2. If the dropdown shows your provider but the decision card still says "Stub canned debate", look at engine stderr (visible in the Vite terminal) for messages prefixed `[live_debate]`. A fall-through to stub usually means the provider name in the WS start frame doesn't match the engine's allowlist (`openai`, `anthropic`, `openrouter`, `gemini`).
-3. For OAuth specifically, if **Settings → OpenAI account** shows "Connected" but debates run as stub, click **Disconnect** and **Connect** again to refresh the tokens.
+To switch to live agents:
 
-The decision card's reasoning text says "Stub canned debate" to make this visible.
+1. Open **Settings → LLM Providers** and add a key for OpenAI, Anthropic, OpenRouter or Google Gemini (or sign in with OpenAI, or pick a local runtime for Quick analysis).
+2. Go back to Analyze and check that **Run with** shows your provider (not "(configure in Settings)").
+3. If the provider is listed but you still get a stub, use **Replace** on that key in Settings to save it again.
+4. If **Settings → OpenAI account (OAuth)** shows "Connected" but runs fall back to a stub or fail, click **Disconnect** and **Connect** again to refresh the sign-in.
 
-### OAuth: 429 rate limit error
+### A Full analysis takes a long time
 
-You've exceeded your ChatGPT subscription's rate window. ChatGPT Plus/Pro accounts have rolling-window limits (often ~80 messages per 3 hours for GPT-4-class models). Wait an hour or switch to the API-key path for the rest of the day. See [oauth.md](oauth.md).
+A Full analysis runs the whole research graph, with many model calls in sequence, and the run shows "Typically 8 to 15 minutes." Time depends on the provider, the model, the debate and risk round counts and the number of analysts enabled under **Settings → Analysis**. A Quick analysis finishes in about a minute. You can press **Stop** at any time. If you want a faster look, switch **Mode** on the Analyze page to **Quick analysis**.
 
-### OAuth: free-tier banner appears
+### "Analysis stopped" notice instead of a committee assessment
 
-Codex routing is unreliable on free-tier ChatGPT accounts. Paste an OpenAI API key on the API-key row and pick that path on the Analyze "Run with" dropdown instead.
+A run can stop before it reaches an assessment. The notice says why:
 
-### Stream error banner appears mid-debate
+- **A Cost Guard stop:** "Stopped: This run reached your Cost Guard ... cap" means the run hit a daily, weekly or monthly cap partway through. Raise the cap under **Settings → Cost Guard**, or use Override when starting the run. "Stopped: This run spent ..., about three times its estimate" means Cost Guard ended a run it judged to be running away from its estimate; check the models and round counts in Settings and try again. What the run spent so far still counts toward your totals. See [cost-guard.md](cost-guard.md).
+- **A token cap:** "Analysis stopped: token cap of N reached" means the optional **Max tokens per run** in **Settings → Analysis** was reached. Raise it, or clear it to rely on the Cost Guard caps.
 
-The WebSocket closed with an unexpected code. Common causes:
-- The engine process was killed externally (e.g., OS memory pressure, manual kill).
-- A network condition interrupted the loopback connection (rare on 127.0.0.1).
+A stopped run produces no assessment and fires no webhooks.
 
-Fix: click **Analyze** again to start a new session. If the error recurs, restart the app.
+### "Analysis failed" notice
 
-### Debate completes instantly with no agent messages
+The notice shows the error from the run, and no assessment was produced. Common causes are an invalid or expired key, a model name your account cannot use, or a provider outage. Check the key and model for the provider under **Run with** and try again. A Full analysis only works with an API key or OpenAI sign-in; if you picked a local runtime (Ollama or LM Studio), switch **Mode** to **Quick analysis**.
 
-The WebSocket opened and closed in under a second. This usually means authentication failed (wrong token) or the engine was restarted between when the renderer fetched the handshake and when it opened the stream. Restarting the app resets the handshake cache.
+### "Budget cap reached" or "Session rate cap reached"
+
+Cost Guard checked the estimated cost of the run before starting and found it would cross one of your caps. Choose **Cancel**, adjust the caps under **Settings → Cost Guard**, or choose **Override and continue** (enabled after a short countdown) for this one run. See [cost-guard.md](cost-guard.md).
+
+### OpenAI sign-in: expired, rate limited or free-tier notice
+
+- **"Your ChatGPT sign-in has expired."** Click **Sign in again** in Settings, or add an OpenAI API key to use instead.
+- **A rate-limit error (429).** You have exceeded your ChatGPT plan's rate window. Wait a while, or use an OpenAI API key for the rest of the day. See [oauth.md](oauth.md).
+- **A free-tier warning appears.** Free ChatGPT accounts have unreliable routing: many models hang or return errors. Add an OpenAI API key and pick it under **Run with**.
+
+### A stream error appears mid-analysis
+
+The connection between the app window and the engine closed unexpectedly, for example because the engine was stopped by the system. Click **Analyze** again to start a new run. If the error recurs, choose **⏻ → Restart**.
+
+### The analysis finishes instantly with no agent messages
+
+The stream opened and closed in under a second. This usually means the engine was restarted while the window still held an old connection. Choose **⏻ → Restart** and try again.
 
 ---
 
 ## Data problems
 
-### "yfinance returns no data" / data summary strip is absent
+### "Yahoo Finance returns no data" or the data summary strip is absent
 
-The price summary strip is absent when `data.summary` was not emitted. This happens when:
+The price summary strip is absent when no price data came back. This happens when:
 
-- **Unknown ticker:** yfinance has no data for that symbol. Check the ticker spelling.
-- **Weekend or holiday date:** the date you entered falls on a non-trading day. The engine will anchor to the most recent prior trading day, but if the entire lookback window has no bars, it raises `DataUnavailable`. Try a weekday date.
-- **Future date:** the date picker is capped at today, but if you bypass this, future dates produce no bars.
-- **Network issue:** yfinance can rate-limit or time out. Wait a minute and try again.
+- **Unknown ticker:** Yahoo Finance has no data for that symbol. Check the spelling.
+- **Weekend or holiday date:** the date you entered falls on a non-trading day. The engine anchors to the most recent prior trading day, but if the whole lookback window has no bars the strip stays empty. Try a weekday.
+- **Future date:** the date picker is capped at today.
+- **Network issue:** Yahoo Finance can rate-limit or time out. Wait a minute and try again.
 
-The debate still runs when data is unavailable, analyst messages fall back to generic language rather than referencing specific prices.
+The analysis still runs when data is unavailable; the agents fall back to more general language instead of citing specific prices.
 
-### yfinance news headlines are empty
+### Yahoo Finance news headlines are empty
 
-This is normal for some tickers or at certain times of day. Yahoo Finance's news API does not guarantee coverage for every ticker. The debate runs without the news card.
+This is normal for some tickers or at certain times of day. Yahoo Finance's news feed does not guarantee coverage for every ticker. The analysis runs without the News card.
 
-For fuller coverage, connect a free Alpaca account under **Settings → Data Providers**. News then comes from Alpaca's Benzinga feed, for both the News card and the news analyst (with **Settings → Analysis → News source** on Auto or Alpaca). See [data-providers.md](data-providers.md#news-sources).
+For fuller coverage, connect a free Alpaca account under **Settings → Data Providers**. News then comes from Alpaca's Benzinga feed, for both the News card and the News analyst in a Full analysis (with **Settings → Analysis → News source** on Auto or Alpaca). See [data-providers.md](data-providers.md#news-sources).
+
+### Alpaca shows "Key rejected" or "Not checked"
+
+"Key rejected" means Alpaca refused the Key ID and Secret, usually because the pair was regenerated or deleted. Create a new pair on the Alpaca dashboard and paste both values again. "Not checked" means Alpaca could not be reached, so the keys could not be tested; use **Check again**. While Alpaca is rejected, analyses run without Alpaca data and a notice says so. See [data-providers.md](data-providers.md).
+
+### A Full analysis lacks social or fundamentals content
+
+Only the analysts ticked under **Settings → Analysis → Analysts** run in a Full analysis, and the default is Market only. Tick the others you want. The Settings note says the News, Social and Fundamentals analysts use an Alpha Vantage key, which you can add under **Settings → Data Providers**.
 
 ---
 
-## Settings / secret storage problems
+## Settings and secret storage problems
 
 ### "Encryption backend unavailable on this OS"
 
-This error appears at the top of the Settings page on Linux when no keyring is running.
+This banner appears on the Settings page when the operating system's encrypted credential store cannot be used. The app refuses to store secrets in plaintext, so this is deliberate. On macOS it should not occur; quit and reopen the app, and if it persists use **Help → Contact Support**.
 
-`safeStorage` on Linux requires a running secret-service implementation (GNOME Keyring, KWallet, etc.). Without it, the app refuses to store secrets in plaintext, the hard-fail is intentional.
+### "Encrypted secrets file recovered"
 
-**Fix on Linux:**
-- Install and start GNOME Keyring: `gnome-keyring-daemon --start`
-- Or install and configure KWallet.
-- Then restart TradingAgentsLab.
-
-On macOS and Windows, encryption is always available and this error should not occur.
-
-### secrets.json is corrupt
-
-The app will show an error if `secrets.json` cannot be parsed. To recover:
-
-```bash
-# macOS
-rm ~/Library/Application\ Support/TradingAgentsLab/secrets.json
-```
-
-The file will be recreated empty on next launch. You will need to re-enter your API keys.
+If `secrets.json` cannot be read, the app moves it aside to `secrets.json.corrupt-<timestamp>.bak`, starts with an empty file, and shows this notice with the backup path. Re-enter your API keys and webhooks. See [security-and-storage.md](security-and-storage.md).
 
 ---
 
-## Desktop / Electron problems
+## Webhook problems
 
-### App window doesn't open
+The **Webhooks** card under the debate lists each receiver as fired, filtered or failed.
 
-- Confirm `npm --prefix desktop install` was run.
-- Try `npm --prefix desktop run dev` from the repo root and look for errors in the terminal output.
-- Check that Node.js 20+ is installed: `node --version`.
+- **filter did not match:** the assessment's stance or conviction did not meet that webhook's filter. Loosen the filter under **Settings → Webhooks**.
+- **failed with an HTTP status:** the receiver answered with an error. For Telegram, a 400 usually means a wrong Chat ID, or that you have not yet sent your bot a first message. A 401 or 404 usually means a wrong token or URL.
+- **failed with timeout:** the receiver took longer than 5 seconds. There is no retry, so run the analysis again once the receiver is healthy.
 
-### Type-check errors during development
-
-Run:
-```bash
-npm --prefix desktop run type-check
-```
-
-Fix any errors before running the app, type errors in `electron/` can prevent the main process from starting.
+See [webhooks.md](webhooks.md).
 
 ---
 
-## Verifying the backend independently
+## Update problems
 
-If the UI is not streaming and you want to rule out a backend problem, run the smoke test:
-
-```bash
-bash tools/dev-smoke.sh
-```
-
-The smoke test starts the engine, runs 8 assertions (auth, CORS, HTTP endpoints, WebSocket), and prints a pass/fail summary. It does not involve Electron or the renderer. If all 8 pass, the problem is in the renderer or Electron main process.
+- **"Update check not available. To update, download the latest version from tradingagentslab.ai."** The app could not apply its update-check privacy protections, so it refuses to check. Download the latest DMG from the site and install it over the current app.
+- **No update appears.** Open **Settings → Updates** and press **Check for updates**. An update that has downloaded installs when you quit, or press **Restart & install**.
 
 ---
 
 ## Further reading
 
-- [Getting started](getting-started.md), initial setup, venv creation
-- [Security and storage](security-and-storage.md), secrets.json location, Linux keyring
-- [How it works](how-it-works.md), stub mode vs. live mode
+- [Getting started](getting-started.md), first-time setup
+- [Security and storage](security-and-storage.md), secrets.json location and recovery
+- [How it works](how-it-works.md), stub mode versus live analysis
+- [Cost Guard](cost-guard.md), caps, estimates and overrides

@@ -1,6 +1,10 @@
+---
+order: 30
+---
+
 # Configuring LLM Providers
 
-*How to connect OpenAI, Anthropic, OpenRouter, Google Gemini, xAI Grok, and MiniMax; how to pick which provider and model each debate uses; how keys are stored.*
+*How to connect OpenAI, Anthropic, OpenRouter, Google Gemini, xAI Grok, MiniMax or a local runtime; how to pick which provider and model each analysis uses; how keys are stored.*
 
 > **For educational research and paper trading. This is not investment advice.**
 
@@ -8,21 +12,21 @@
 
 ## What ships today
 
-TradingAgentsLab supports seven LLM provider families. All seven can drive a real-LLM debate end-to-end:
+Trading Agents Lab Pro supports seven LLM provider families:
 
-| Provider | Auth options | Default model | Notes |
+| Provider | Auth options | Model pre-selected on Analyze | Notes |
 |---|---|---|---|
-| **OpenAI** | API key **or** ChatGPT OAuth | `gpt-4o-mini` (key) / your account's current default (OAuth) | OAuth routes through your ChatGPT subscription, not per-token API billing, see [oauth.md](oauth.md). |
-| **Anthropic** | API key only | `claude-haiku-4-5` | OAuth is **not** supported, banned by Anthropic Terms of Service. |
-| **OpenRouter** | API key | `openai/gpt-4o-mini` | One key, hundreds of models. Useful as a single-key multi-model fallback. |
+| **OpenAI** | API key **or** ChatGPT sign-in (OAuth) | `gpt-4o-mini` (key) / the first model in your ChatGPT account's live list (sign-in) | Sign-in routes through your ChatGPT plan instead of per-token API billing. See [oauth.md](oauth.md). |
+| **Anthropic** | API key only | `claude-sonnet-5-5` | There is no Anthropic sign-in: Anthropic's Terms of Service do not allow it. |
+| **OpenRouter** | API key | `openai/gpt-4o-mini` | One key, many models. Useful as a single-key multi-model option. |
 | **Google Gemini** | API key | `gemini-3.1-flash-lite` | Gemini 2.5 and 3.x. Gemini 2.0 Flash was retired by Google; a saved 2.0 Flash choice moves to 3.1 Flash-Lite. |
 | **xAI Grok** | API key | `grok-4.3` | Grok 4.3 plus the Grok 4.20 family. |
 | **MiniMax** | API key | `MiniMax-M2.7-highspeed` | MiniMax M2.x (Global region, 204K context). |
-| **Local LLM** | Auto-detect (no key) | Dynamic, whatever your runtime exposes | Ollama, LM Studio, or any OpenAI-compatible localhost server. Free, private, $0. See [local-llm.md](local-llm.md). |
+| **Local LLM** | Auto-detect (no key) | Whatever your runtime exposes | Ollama, LM Studio, or any OpenAI-compatible localhost server. Works with Quick analysis only. See [local-llm.md](local-llm.md). |
 
-All providers use the same shared `LLMAdapter` Protocol on the engine side, so adding more providers later is a matter of one new adapter class plus an entry in the priority list.
+**Full analysis** (the default mode) runs on an API key or on OpenAI sign-in. A local runtime is available for **Quick analysis** only. Both modes are described in [how-it-works.md](how-it-works.md).
 
-The **priority order** when multiple are configured is: OpenAI → Anthropic → OpenRouter → Gemini → xAI → MiniMax → Local. Local is last so paid keys auto-win for analysis quality, but you can override per-debate via the **Run with** dropdown on Analyze.
+When more than one provider is configured, the priority order is: OpenAI, Anthropic, OpenRouter, Gemini, xAI, MiniMax, Local. Local is last so a paid key is chosen first. You can override that choice at any time with the **Run with** dropdown on Analyze.
 
 ---
 
@@ -30,9 +34,11 @@ The **priority order** when multiple are configured is: OpenAI → Anthropic →
 
 Open Settings from the sidebar or press `Cmd+,`. Select the **LLM Providers** tab.
 
-Each provider appears as a row. Connected providers show a **green pill** ("Connected ✓") and the last 4 characters of the key as a hint. You can **Replace** or **Delete** a stored key at any time.
+The tab lists an **OpenAI account (OAuth)** row first, then one row for each API-key provider (OpenAI, Anthropic, OpenRouter, Google Gemini, xAI Grok, MiniMax), then the **Local LLM (Ollama / LM Studio)** section.
 
-The OpenAI row has two sub-rows: **API key** and **OpenAI account (OAuth)**. You can connect both, one will be picked as the active path per session via the Analyze-page picker.
+Each stored key shows a green **Connected ✓** pill, the last 4 characters of the key as a hint, and when it was saved. From there you can **Test** the key (a short request to the provider), **Replace** it or **Delete** it at any time.
+
+You can have both an OpenAI API key and an OpenAI sign-in stored. When both are present, the sign-in is used. See [oauth.md](oauth.md).
 
 ---
 
@@ -43,110 +49,105 @@ The OpenAI row has two sub-rows: **API key** and **OpenAI account (OAuth)**. You
 3. Paste your key into the password field. The field is masked.
 4. Click **Save**.
 
-The key is encrypted by your OS keychain before touching disk. You never see it again, only the `…last4` hint is displayed afterward.
+The key is encrypted by your OS keychain before it touches disk. You never see it again; only the last 4 characters are displayed afterward.
 
-To replace a key, click **Replace** and paste the new value. The old ciphertext is overwritten atomically.
-
-To remove a key, click **Delete**. The encrypted entry is erased from `secrets.json`.
+To replace a key, click **Replace** and paste the new value. To remove a key, click **Delete** and confirm. The encrypted entry is erased from `secrets.json`.
 
 ---
 
-## Connecting via OAuth (OpenAI only)
+## Connecting with ChatGPT sign-in (OpenAI only)
 
-If you have a paid ChatGPT account (Plus, Pro, Team, or Enterprise), you can connect it via OAuth instead of pasting an API key. This routes debates through your **ChatGPT subscription**, no per-token API billing.
+If you have a paid ChatGPT account, you can sign in instead of pasting an API key. In **Settings → LLM Providers**, click **Connect** on the **OpenAI account (OAuth)** row and approve the connection in the browser tab that opens. The row then shows your email and plan, for example *"you@example.com · plus plan"*.
 
-1. In **Settings → LLM Providers**, find the **OpenAI account (OAuth)** row.
-2. Click **Connect**.
-3. A browser tab opens to ChatGPT. Sign in if needed and approve the connection.
-4. The row updates to show your email and detected plan tier (e.g. *"you@example.com · plus plan"*).
+A banner warns when the plan is **free**, because the ChatGPT backend is unreliable on free accounts. Paste an API key instead in that case.
 
-If the JWT decodes to a **free** plan, a banner appears warning that Codex routing is unreliable on free accounts, paste an API key instead in that case.
-
-OAuth tokens live in the same encrypted store as API keys. You can disconnect at any time with **Disconnect**, which clears both the access and refresh tokens.
-
-For the full OAuth flow + Codex backend technical details, see [oauth.md](oauth.md).
+**Disconnect** erases the stored sign-in tokens. The full flow, what is the same and what differs from an API key, and troubleshooting are in [oauth.md](oauth.md).
 
 ---
 
-## Picking which provider runs your debate
+## Picking which provider runs your analysis
 
-When multiple providers are configured, the **Analyze page header** shows a "Run with" dropdown listing every connected provider plus the OpenAI OAuth row when present. The dropdown selection persists across sessions in `localStorage`.
+The **Analyze** page header has three pickers:
 
-Below it, a second dropdown lets you pick the specific model for the active provider. Each (provider, auth-mode) pair remembers its last-chosen model independently, switching from "OpenAI · gpt-4o" to "OpenAI account (OAuth) · gpt-6.1-sol" and back will restore your previous picks for each.
+- **Mode**: **Full analysis** or **Quick analysis**.
+- **Run with**: every provider, with the ones you have not set up shown as *(configure in Settings)* and disabled. OpenAI is shown as *OpenAI (OAuth)* when the sign-in is the one in use.
+- A **model** dropdown for the selected provider.
+
+Your **Run with** choice is remembered between sessions. Each provider (and OpenAI sign-in, separately from OpenAI with a key) also remembers its own last-chosen model, so switching away and back restores your earlier pick. A **Reset** button appears when you have changed the provider or model from the recommended pre-selection; it clears your manual choices.
+
+Full analysis uses two model roles: a **deep** model for the research manager and the portfolio manager, and a **quick** model for every other step. Both roles use the model you pick in the dropdown. A saved Gemini 2.0 Flash choice moves to Gemini 3.1 Flash-Lite in both. Quick analysis runs every step on the one model you pick.
 
 ### The model list is live
 
-The model dropdown shows the models your provider offers **right now**, not a list fixed when the app was built. When you open Analyze with an API-key provider selected (OpenAI, Anthropic, OpenRouter, Google Gemini, or xAI Grok), the app asks that provider for its current model list, so new models appear without an app update.
+The model dropdown shows the models your provider offers **right now**, not a list fixed when the app was built. When an API-key provider is selected (OpenAI, Anthropic, OpenRouter, Google Gemini or xAI Grok), the app asks that provider for its current model list, so new models appear without an app update.
 
-- **Recommended** at the top: a short list we picked for the debate, limited to models the provider still offers. The model marked *(recommended)* is the one used when you have not chosen one.
+- **Recommended** at the top: a short list picked for the analysis, limited to models the provider still offers. The model marked *(recommended)* is the one used when you have not chosen one.
 - **All available** below: every other text model the provider lists. OpenRouter lists hundreds.
 - A line under the dropdown says where the list came from: *live from* the provider, a *saved list* from the last time it loaded (with the reason, if the latest attempt failed), or the *built-in list* if the provider has never been reached (with the reason). **Refresh** asks the provider again.
 - Your chosen model is **never switched for you**. If the provider's list no longer shows it (for example, it now lists the same model under a dated name), it stays selected and appears at the top as *your saved choice*, or as *saved, not listed by provider* when the provider lists no model by that name at all (runs with it may then fail).
-- The request goes from the app's local engine straight to the provider you configured, with your own key, and only for the provider selected in the dropdown. Nothing is sent anywhere else, and the key is not stored by the engine.
-- **MiniMax** keeps its built-in list. **Local** runtimes list whatever you have installed (see [local-llm.md](local-llm.md)). The **OpenAI account (OAuth)** path has its own live list from your ChatGPT account (see [oauth.md](oauth.md)).
+- The request goes from the app's local engine straight to the provider you configured, with your own key, and only for the provider selected in the dropdown. Nothing is sent anywhere else, and the engine does not store the key.
+- **MiniMax** keeps its built-in list. **Local** runtimes list whatever you have installed (see [local-llm.md](local-llm.md)). The **OpenAI sign-in** path has its own live list from your ChatGPT account (see [oauth.md](oauth.md)).
 
-> **Pro** Trading Agents Lab Pro runs each analysis with a **deep** model (research manager and portfolio manager) and a **quick** model (every other step). Both use the model picked in this dropdown, so they come from the same live list and follow the same rules: your choice is never switched for you, and a saved Gemini 2.0 Flash choice moves to Gemini 3.1 Flash-Lite. Anthropic reasoning effort (Settings, Analysis) is sent only when the model accepts it: Claude Opus 4.5 and later, Sonnet 4.6 and later, and Fable 5 and later. Haiku models never accept it.
+### Reasoning models
+
+Some models think before they answer: OpenAI's o-series and gpt-5 and gpt-5-mini, the newer Claude models (Opus 5 and 5.5, Sonnet 5 and 5.5, Haiku 5.5, Fable, Mythos), Gemini 2.5 and 3.x, and OpenRouter models whose catalog entry says they reason. Thinking is billed by the provider as output, so it costs more than a non-reasoning model at the same price.
+
+- In a **Quick analysis**, each agent gets **extra room to think** (1,200 tokens on top of its answer budget) and is asked for a low reasoning effort. If a model still uses all of that room thinking, the turn shows an error instead of a blank answer; pick a non-reasoning model in that case.
+- In a **Full analysis**, the research graph does not cap how long a model thinks. Cost Guard budgets reasoning models at 2.5 times the visible output of each step. See [cost-guard.md](cost-guard.md).
+
+**Anthropic reasoning effort** (Settings, Analysis) applies to Full analysis only. It is sent only when both the deep and the quick model accept it: Claude Opus 4.5 and later, Sonnet 4.6 and later, and Fable 5 and later. Haiku models never accept it, and the setting is ignored for other providers.
 
 Cost Guard still applies to a model that is newer than your copy of the app. Models the app has no price for are budgeted at a deliberately high estimate, so a new model can make Cost Guard stop sooner, never later. OpenRouter models are budgeted at the price OpenRouter publishes for them. See [cost-guard.md](cost-guard.md).
 
-If no provider is configured, the dropdown is disabled and debates run in **stub mode** (canned debate using real yfinance data, see [how-it-works.md](how-it-works.md)).
+### Stub mode
 
-The default-active provider when you have multiple keys: first in the priority list (OpenAI → Anthropic → OpenRouter → Gemini). Use **Reset overrides** under the dropdown to clear manual selections and fall back to the recommended pre-selection.
+If no provider is configured, **Run with** shows *Stub debate (no LLM configured)* and the analysis is a canned debate that uses real yfinance data. It costs nothing and is useful for checking that the app works. See [how-it-works.md](how-it-works.md).
 
 ---
 
 ## How keys are stored
 
-TradingAgentsLab uses Electron's `safeStorage` API, which wraps:
-
-- **macOS:** Keychain Services
-- **Windows:** DPAPI (Data Protection API)
-- **Linux:** libsecret / secret-service
-
-The file at `<userData>/secrets.json` contains only base64-encoded ciphertext, never plaintext. The exact path is shown in **Settings → About**.
+Trading Agents Lab Pro uses Electron's `safeStorage` API, which on macOS wraps the Keychain. The file at `<userData>/secrets.json` contains only base64-encoded ciphertext, never plaintext. The exact path is shown in **Settings → About**.
 
 Each entry records:
 
-- `hint`, the last 4 plaintext characters (for UI identification, not security)
-- `updatedAt`, ISO-8601 timestamp of the last save
+- `hint`, the last 4 plaintext characters (for identification in the UI, not security)
+- `updatedAt`, an ISO-8601 timestamp of the last save
 - `cipher`, base64 of the OS-encrypted bytes
 
-OAuth credentials are stored under a separate `oauth:openai` key prefix, with the access token, refresh token, expiry, email, account ID, and decoded plan tier all encrypted as a single JSON blob.
+The ChatGPT sign-in is stored under a separate `oauth:openai` entry, with the access token, refresh token, expiry, email, account ID and plan all encrypted together.
 
-**The encrypted blob is machine- and user-bound.** Copying `secrets.json` to another machine will not work, the ciphertext cannot be decrypted there. See [security-and-storage.md](security-and-storage.md).
+**The encrypted file is machine- and user-bound.** Copying `secrets.json` to another machine will not work, because the ciphertext cannot be decrypted there. See [security-and-storage.md](security-and-storage.md).
 
 ---
 
 ## Cost expectations
 
-| Path | Per-debate cost | Notes |
-|---|---|---|
-| Stub (no provider) | $0 | Canned debate with real yfinance data. Useful for UI verification. |
-| OpenAI API · `gpt-4o-mini` | ~$0.001-$0.003 | Default. Cheap enough for hundreds of runs per dollar. |
-| OpenAI API · `gpt-4o` | ~$0.02-$0.05 | Deeper reasoning, ~10× cost. |
-| OpenAI OAuth · any Codex model | $0 (per-token) | Routes through your ChatGPT subscription. Subject to subscription rate limits, your plan tier determines how many debates per hour you can run. |
-| Anthropic · `claude-haiku-4-5` | ~$0.005-$0.01 | Cheap baseline. |
-| Anthropic · `claude-sonnet-4-6` | ~$0.03-$0.06 | Deeper reasoning. |
-| OpenRouter · any model | varies | Budgeted at OpenRouter's published price for that model. |
-| Gemini · `gemini-3.0-flash` | ~$0.001-$0.005 | Cheap baseline. |
+Your cost depends on the provider, the model and the mode.
 
-The `session.complete` event in live mode carries `estimated_cost_usd`, `input_tokens`, and `output_tokens` for cost tracking. OAuth sessions report `estimated_cost_usd: 0` since billing is via subscription.
+- **Stub mode** costs $0.
+- **OpenAI sign-in** has no per-token cost, but it uses your ChatGPT plan's quota. See [oauth.md](oauth.md).
+- **Local LLM** costs $0 in API fees.
+- **Quick analysis** is the shorter single-model debate, so it costs less than a Full analysis on the same model.
+- **Full analysis** makes many more model calls. As a reference, Cost Guard estimates about $1.31 for a Full analysis with all four analysts, one round of each debate and Claude Sonnet 4.6 as both models, and about $0.75 with only the Market analyst (the setting a new install starts with). Treat these as planning figures, not a quote.
 
-A future **Cost Guard** feature will let you set per-day / per-week / per-month budget caps to prevent runaway spend.
+Cost Guard estimates every paid analysis before it starts and watches spending while a Full analysis runs. The `session.complete` event carries `estimated_cost_usd`, `input_tokens` and `output_tokens`; OpenAI sign-in and local sessions report `estimated_cost_usd: 0`.
 
 To keep costs low:
 
-- Default to `gpt-4o-mini`, `gemini-3.0-flash`, or `claude-haiku-4-5`.
-- Use the Stop button (`Cmd+.`) if you want to abort mid-debate.
-- Stub mode (no key configured) has zero API cost.
-- ChatGPT OAuth has zero per-token cost, but eats your subscription quota.
+- Use Quick analysis, or keep Full analysis on the Market analyst with one round of each debate.
+- Pick a cheaper model from the dropdown.
+- Use the Stop button (`Cmd+.`) to end an analysis early. What was already spent still counts toward your totals.
+- Set Cost Guard caps you are comfortable with (**Settings → Cost Guard**).
 
 ---
 
 ## Further reading
 
-- [how-it-works.md](how-it-works.md), stub mode vs. live mode explained
-- [oauth.md](oauth.md), ChatGPT subscription routing in depth
+- [how-it-works.md](how-it-works.md), Full and Quick analysis, and stub mode
+- [oauth.md](oauth.md), ChatGPT sign-in in depth
+- [local-llm.md](local-llm.md), Ollama and LM Studio
+- [cost-guard.md](cost-guard.md), budget caps and the mid-run stop
 - [security-and-storage.md](security-and-storage.md), detailed key storage model
-- [troubleshooting.md](troubleshooting.md), what to do when a debate fails
-- Engine API reference: [docs/api.md](../api.md)
+- [troubleshooting.md](troubleshooting.md), what to do when an analysis fails
+- Engine API reference: [docs/api.md](https://github.com/RBJGlobal/TradingAgentsLab-Pro/blob/main/docs/api.md)
