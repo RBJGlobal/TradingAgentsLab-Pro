@@ -14,7 +14,7 @@ order: 140
 
 | What | Where | Format | Protection |
 |---|---|---|---|
-| API keys (LLM, Alpaca, Alpha Vantage), webhook list, Telegram bot token | `<userData>/secrets.json` (`llm:*`, `data:*`, `webhooks:configs`, `telegram:bot-token` entries) | Encrypted ciphertext | OS keychain (safeStorage) |
+| API keys (LLM, Alpaca, Alpha Vantage), webhook list, Telegram bot token | `<userData>/secrets.json` (`llm:*`, `data:*`, `local:model`, `webhooks:configs`, `telegram:bot-token` entries) | Encrypted ciphertext | OS keychain (safeStorage) |
 | OpenAI sign-in tokens | `<userData>/secrets.json` (`oauth:openai` entry) | Encrypted JSON blob | OS keychain (safeStorage) |
 | Analysis history and transcripts | `<userData>/sessions.db` | SQLite | File-system permissions only |
 | Watchlist tickers | same `sessions.db` (`watchlist` table) | SQLite | File-system permissions only |

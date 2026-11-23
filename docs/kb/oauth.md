@@ -26,7 +26,7 @@ Sign-in works for both **Full analysis** and **Quick analysis**.
 2. Find the **OpenAI account (OAuth)** row at the top of the tab. It is separate from the OpenAI API-key row, and you can have both.
 3. Click **Connect**. A browser tab opens to OpenAI.
 4. Sign in if you are not already, and approve the request.
-5. The row updates to show your email and plan, for example *"you@example.com · plus plan"*, and the pill changes from **Recommended** to **Connected**.
+5. The row updates to show your email and plan, for example *"Connected as you@example.com · plus plan"*, and the pill changes from **Recommended** to **Connected**.
 
 If the browser tab cannot hand the result back to the app within about 20 seconds, the row shows a paste field: *"Browser callback not received. Paste the code from the OpenAI page here."* Paste the code and click **Submit**.
 
@@ -40,7 +40,7 @@ To disconnect, click **Disconnect** on the same row and confirm. The access and 
 
 When sign-in completes, the app reads the plan from the sign-in token (the `chatgpt_plan_type` claim) and shows it next to your email: *"plus plan"*, *"pro plan"*, *"team plan"* and so on.
 
-If the plan comes back as **free**, a banner appears in Settings: free-tier ChatGPT accounts have unreliable routing through the ChatGPT backend, and many models hang or return errors. **Add an OpenAI API key** instead if you are on the free tier.
+If the plan comes back as **free**, a banner appears in Settings: free-tier ChatGPT accounts have unreliable Codex routing through the ChatGPT backend, and many models hang or return errors. **Add an OpenAI API key** instead if you are on the free tier.
 
 If the plan cannot be read, the banner does not appear and you can still try an analysis.
 
@@ -54,9 +54,9 @@ An OpenAI API key calls:
 https://api.openai.com/v1/chat/completions
 ```
 
-That is the **per-token billing** endpoint family. A ChatGPT sign-in token sent there would be billed against your API account, which is a different billing surface from your ChatGPT plan.
+That is the **per-token billing** endpoint family. It is separate from your ChatGPT plan.
 
-The ChatGPT web app and OpenAI's Codex CLI use a different endpoint:
+OpenAI's Codex CLI uses a different endpoint, and the sign-in path uses it too:
 
 ```
 https://chatgpt.com/backend-api/codex/responses
@@ -77,7 +77,7 @@ Your sign-in tokens stay on your machine, encrypted by your OS keychain. See [se
 
 **Important:** analyses on sign-in use your ChatGPT plan's quota. A Full analysis makes many model calls, so several in a row can use a meaningful share of your allowance. If you reach your plan's limit, analyses fail until it resets. The exact limits are not published by OpenAI and can change.
 
-**Verification:** after your first sign-in analysis, check your **OpenAI billing dashboard** to confirm the run did not add to your API usage. Whether sign-in tokens route through your plan or through per-token billing depends on your OpenAI account configuration. If a run did bill your API account, open an issue on GitHub.
+**Verification:** after your first sign-in analysis, check your **OpenAI billing dashboard** to confirm the run did not add to your API usage. Sign-in runs are sent only to the ChatGPT backend, not to api.openai.com. If a run did appear on your API account, open an issue on GitHub.
 
 ### Cost Guard and sign-in
 
@@ -135,7 +135,7 @@ Sign-in is **OpenAI only**. Anthropic's Terms of Service do not allow it, so Tra
 
 ## Troubleshooting
 
-**"Free-tier ChatGPT accounts have unreliable routing" banner.** You are signed in with a free ChatGPT account. Add an OpenAI API key and disconnect the sign-in.
+**"Free-tier ChatGPT accounts have unreliable Codex routing" banner.** You are signed in with a free ChatGPT account. Add an OpenAI API key and disconnect the sign-in.
 
 **"Your ChatGPT sign-in has expired."** Click **Sign in again** in Settings, or use **Use API key** on the Analyze notice if you have a key stored.
 

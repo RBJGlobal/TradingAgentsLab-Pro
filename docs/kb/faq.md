@@ -107,7 +107,7 @@ Six cloud provider families are available: **OpenAI**, **Anthropic**, **OpenRout
 
 ### Can I use my paid ChatGPT account instead of an API key?
 
-Yes, for OpenAI only. The sign-in routes runs through the Codex backend at `chatgpt.com/backend-api/codex/responses` (the same backend the ChatGPT web app and Codex CLI use), so runs count against your ChatGPT plan limits instead of per-token API charges. See [oauth.md](oauth.md). Free-tier ChatGPT accounts are unreliable here, so paste an API key instead.
+Yes, for OpenAI only. The sign-in routes runs through the Codex backend at `chatgpt.com/backend-api/codex/responses` (the backend OpenAI's Codex CLI uses), so runs count against your ChatGPT plan limits instead of per-token API charges. See [oauth.md](oauth.md). Free-tier ChatGPT accounts are unreliable here, so paste an API key instead.
 
 ### Why is there no Anthropic sign-in?
 

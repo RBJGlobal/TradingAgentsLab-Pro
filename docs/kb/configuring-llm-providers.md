@@ -57,7 +57,7 @@ To replace a key, click **Replace** and paste the new value. To remove a key, cl
 
 ## Connecting with ChatGPT sign-in (OpenAI only)
 
-If you have a paid ChatGPT account, you can sign in instead of pasting an API key. In **Settings → LLM Providers**, click **Connect** on the **OpenAI account (OAuth)** row and approve the connection in the browser tab that opens. The row then shows your email and plan, for example *"you@example.com · plus plan"*.
+If you have a paid ChatGPT account, you can sign in instead of pasting an API key. In **Settings → LLM Providers**, click **Connect** on the **OpenAI account (OAuth)** row and approve the connection in the browser tab that opens. The row then shows your email and plan, for example *"Connected as you@example.com · plus plan"*.
 
 A banner warns when the plan is **free**, because the ChatGPT backend is unreliable on free accounts. Paste an API key instead in that case.
 

@@ -115,7 +115,7 @@ The override button is disabled for three seconds after the dialog opens, with a
 Because a Full analysis estimate is not a ceiling, Trading Agents Lab Pro also watches spending while the analysis runs. Before each model call, it checks whether one more call as large as the largest so far could push your spending past a limit, using the same prices that are recorded when the run ends. If it could, the run stops there and the analysis screen says so, for example: *"Stopped: This run reached your Cost Guard daily cap after spending $0.87. Raise the cap in Settings, Cost Guard, or use Override."*
 
 - **A normal run** stops only when continuing could take you past the daily, weekly or monthly cap, whichever has the least room left. The room is rechecked after each step of the analysis, so an analysis started in the meantime is taken into account, and each run's real spend so far counts against the room the others see. A run that costs more than its estimate but stays under your caps finishes normally.
-- **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is turned off or no USD cap is set. The message reads *"Stopped: This run spent $X, about three times its estimate of $Y, so Cost Guard ended it as a likely runaway."*
+- **An override run** ignores the caps, but stops if it reaches about **3 times its own estimate**. That catches a runaway (a step that never stops calling tools, or a model that keeps thinking). The same runaway stop applies when Cost Guard is turned off or no USD cap is set. The message reads *"Stopped: This run spent $X, about three times its estimate of $Y, so Cost Guard ended it as a likely runaway. Check the models and round counts in Settings, then try again."*
 - **ChatGPT sign-in and Local runs** cost $0 per token, so they have no dollar stop. The optional token cap (**Settings → Analysis**, **Max tokens per run**) still applies to a Full analysis.
 
 If the final thesis-scoring step could cross the limit, it is skipped and the analysis ends without the thesis strength bars. A run stopped early produces no committee assessment, but what it spent is added to your totals.
@@ -128,7 +128,7 @@ Cost Guard reserves the estimate **atomically**: the database insert of the rese
 
 When an analysis ends, its reservation is finalized with the real token usage in place of the estimate. A reservation also has a lifetime, so a crash cannot hold your budget forever:
 
-- A **Full analysis** reservation lives **60 minutes**, because a Full analysis can take 6 to 11 minutes at the default settings and longer with extra rounds.
+- A **Full analysis** reservation lives **60 minutes**, because a Full analysis typically takes 8 to 15 minutes and longer with extra rounds.
 - A **Quick analysis** reservation lives **15 minutes**.
 
 If the app is killed mid-run, the reservation frees itself when it expires. A run that lasts longer than its reservation still records what it really spent.

@@ -32,7 +32,7 @@ The **Run with** dropdown on the Analyze page shows **Stub debate (no LLM config
 
 To switch to live agents:
 
-1. Open **Settings → LLM Providers** and add a key for OpenAI, Anthropic, OpenRouter or Google Gemini (or sign in with OpenAI, or pick a local runtime for Quick analysis).
+1. Open **Settings → LLM Providers** and add a key for OpenAI, Anthropic, OpenRouter, Google Gemini, xAI Grok or MiniMax (or sign in with OpenAI, or pick a local runtime for Quick analysis).
 2. Go back to Analyze and check that **Run with** shows your provider (not "(configure in Settings)").
 3. If the provider is listed but you still get a stub, use **Replace** on that key in Settings to save it again.
 4. If **Settings → OpenAI account (OAuth)** shows "Connected" but runs fall back to a stub or fail, click **Disconnect** and **Connect** again to refresh the sign-in.
@@ -62,7 +62,7 @@ Cost Guard checked the estimated cost of the run before starting and found it wo
 
 - **"Your ChatGPT sign-in has expired."** Click **Sign in again** in Settings, or add an OpenAI API key to use instead.
 - **A rate-limit error (429).** You have exceeded your ChatGPT plan's rate window. Wait a while, or use an OpenAI API key for the rest of the day. See [oauth.md](oauth.md).
-- **A free-tier warning appears.** Free ChatGPT accounts have unreliable routing: many models hang or return errors. Add an OpenAI API key and pick it under **Run with**.
+- **A free-tier warning appears.** Free ChatGPT accounts have unreliable Codex routing: many models hang or return errors. Add an OpenAI API key and pick it under **Run with**.
 
 ### A stream error appears mid-analysis
 
