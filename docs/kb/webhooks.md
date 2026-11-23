@@ -1,8 +1,18 @@
+---
+order: 110
+---
+
 # Webhooks
 
-Push every completed debate's decision to your own systems, Telegram, Slack, Discord, or any HTTPS endpoint. Useful for getting notified on a phone while an overnight analysis runs, logging decisions to a spreadsheet for backtesting later, or bridging the analysis output to your own broker via a small script.
+*Push every completed analysis's committee assessment to Telegram, Slack, Discord, or your own HTTPS endpoint.*
 
-**Trading Agents Lab does not execute trades.** Webhooks are an analysis handoff. They push the JSON decision payload to your receivers; if you want to act on it (e.g. place an order with your brokerage), your receiving script does that part with your own broker credentials, on the regulated platform. This is the locked-positioning firewall, your app, your auth, your responsibility.
+> **For educational research and paper trading. This is not investment advice.**
+
+---
+
+Webhooks push every completed analysis's committee assessment to your own systems: Telegram, Slack, Discord, or any HTTPS endpoint. Useful for getting notified on a phone while a long analysis runs, logging assessments to a spreadsheet for review later, or handing the analysis output to a script of your own.
+
+**Trading Agents Lab Pro does not place trades.** Webhooks are an analysis handoff. They push the JSON assessment payload to your receivers. The payload carries no trade instruction. If you choose to build automation on top of it, your receiving script owns that decision and acts with your own credentials on a regulated platform. Your app, your auth, your responsibility.
 
 ## Where to configure
 
@@ -10,49 +20,56 @@ Push every completed debate's decision to your own systems, Telegram, Slack, Dis
 
 Per-webhook you set:
 
-- **Name**, anything human-readable, shown in the post-debate report
-- **Kind**, Telegram, Slack, Discord, or Generic JSON
-- **URL**, the webhook endpoint (treated as a secret; stored via OS keychain)
-- **Chat ID** (Telegram only)
-- **HMAC secret** (Generic only), sent as `X-TAL-Signature: sha256=<hex>`
-- **Filter**, fire only on certain actions and/or above a confidence threshold
+- **Name**: anything human-readable, shown in the post-analysis report
+- **Kind**: Telegram, Slack, Discord, or Generic JSON
+- **Bot Token** and **Chat ID** (Telegram only)
+- **URL**: the webhook endpoint (Slack, Discord, Generic). Treated as a secret and stored encrypted by your operating system.
+- **HMAC shared secret (optional)** (Generic only), sent as `X-TAL-Signature: sha256=<hex>`
+- **Filter**: fire only on certain stances (**Fire on stances**) and/or at or above a **Minimum conviction** threshold
 
-Filters are optional. Leave the action checkboxes empty + confidence slider at 0% to fire on every debate.
+Filters are optional. Leave the stance checkboxes empty and the conviction slider at 0% to fire on every analysis.
+
+Webhooks fire after both kinds of analysis (Full and Quick), and after each ticker of a Watchlist **Run all** batch. The same list of webhooks applies to all of them.
 
 ## Recipes
 
 ### Telegram (recommended for phone alerts)
 
-1. On Telegram, message [@BotFather](https://t.me/BotFather), `/newbot`, follow the prompts. Save the **bot token** it gives you.
-2. Message your new bot anything (it has to send first, you can't DM it cold).
-3. Message [@userinfobot](https://t.me/userinfobot), it replies with your numeric **chat ID**.
-4. In TAL: `+ Add webhook` → Kind: **Telegram** → URL: `https://api.telegram.org/bot<TOKEN>/sendMessage` → Chat ID: your numeric ID.
+1. On Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, and follow the prompts. Save the **bot token** it gives you.
+2. Message your new bot anything (it has to be messaged first; you cannot add it to a chat cold).
+3. Message [@userinfobot](https://t.me/userinfobot). It replies with your numeric **chat ID**.
+4. In Trading Agents Lab Pro: `+ Add webhook`, Kind: **Telegram**, paste the token into **Bot Token** and your numeric ID into **Chat ID**.
 
-For group chats: add the bot to the group, send a message in the group, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser to find the negative chat ID (e.g. `-100123456789`).
+For group chats: add the bot to the group, send a message in the group, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser to find the negative chat ID (for example `-100123456789`).
 
 ### Slack
 
 1. In Slack: `Apps → Incoming Webhooks → Add to Slack → pick channel → save`. Slack gives you a webhook URL.
-2. In TAL: Kind: **Slack** → paste the URL. No other fields needed.
+2. In Trading Agents Lab Pro: Kind: **Slack**, paste the URL. No other fields are needed.
 
 ### Discord
 
 1. In a Discord server: `Server Settings → Integrations → Webhooks → New Webhook → pick channel → copy URL`.
-2. In TAL: Kind: **Discord** → paste the URL.
+2. In Trading Agents Lab Pro: Kind: **Discord**, paste the URL.
+
+Telegram, Slack and Discord receive a short text message: ticker, stance, conviction, the as-of date, the bull and bear thesis strengths and risk level when present, and the first part of the reasoning (about 500 characters), followed by the line "Analytical stance, not a recommendation. Any investment decision is yours alone."
 
 ### Generic (your own script / Cloudflare Worker / Lambda)
 
-The payload shape is documented as `schema: tradingagentslab.webhook.v1`:
+The payload schema is `tradingagentslab.webhook.v2`. The `decision` block carries the full analytical stance model:
 
 ```json
 {
-  "schema": "tradingagentslab.webhook.v1",
+  "schema": "tradingagentslab.webhook.v2",
   "event": "session.complete",
   "ticker": "NVDA",
   "trade_date": "2026-05-15",
   "decision": {
-    "action": "BUY",
-    "confidence": 0.78,
+    "stance": "bullish",
+    "conviction": 0.78,
+    "bull_strength": 78,
+    "bear_strength": 42,
+    "risk_level": "moderate",
     "reasoning": "..."
   },
   "session_id": "01923f...",
@@ -62,6 +79,8 @@ The payload shape is documented as `schema: tradingagentslab.webhook.v1`:
   "estimated_cost_usd": 0.0042
 }
 ```
+
+Stance values: `bullish` | `moderately_bullish` | `neutral` | `moderately_bearish` | `bearish`. Conviction is 0 to 1. Bull and bear strengths are 0 to 100 scores. Risk level is `low` | `moderate` | `elevated`. For a Full analysis, `model` is the deep model of the run.
 
 Set an **HMAC shared secret** on the generic webhook to sign the body. Your receiver verifies by recomputing:
 
@@ -73,60 +92,52 @@ if not hmac.compare_digest(sig, expected):
     return 403
 ```
 
-### Bridge to your own broker (illustrative)
+### Building your own rule on top (illustrative)
 
-If you want TAL's analysis to trigger a real-money trade, write a thin receiver. Example as a Cloudflare Worker that forwards BUY decisions over a confidence threshold to your Alpaca Live or Interactive Brokers account using *your* credentials:
+The assessment is analysis, not an instruction: nothing in the payload tells any system to trade, and the app never will. If you choose to build automation on top of it, that mapping from stance to action is a rule **you** define, running on **your** receiver, under **your** credentials and authority. Example of such a rule, a Cloudflare Worker that keeps your own research log:
 
 ```ts
 export default {
   async fetch(req: Request, env: Env) {
     if (req.method !== 'POST') return new Response('only POST', { status: 405 });
-    const body = await req.json<TalDecision>();
+    const body = await req.json<TalAssessment>();
 
-    // Filter is also enforced in TAL; this is belt-and-braces.
-    if (body.decision.action !== 'BUY') return new Response('skip');
-    if (body.decision.confidence < 0.75) return new Response('skip');
+    // Your own rule: keep only bullish assessments with conviction of 75% or more.
+    if (!['bullish', 'moderately_bullish'].includes(body.decision.stance)) return new Response('skip');
+    if (body.decision.conviction < 0.75) return new Response('skip');
 
-    // Place the order with YOUR brokerage credentials, not TAL's.
-    await fetch('https://api.alpaca.markets/v2/orders', {
-      method: 'POST',
-      headers: {
-        'APCA-API-KEY-ID': env.ALPACA_KEY_ID,
-        'APCA-API-SECRET-KEY': env.ALPACA_SECRET,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        symbol: body.ticker,
-        qty: 1,
-        side: 'buy',
-        type: 'market',
-        time_in_force: 'gtc',
-      }),
-    });
+    // Append a row to your own research log (a KV namespace you created).
+    const key = `${body.ticker}:${body.trade_date}`;
+    await env.RESEARCH_LOG.put(key, JSON.stringify({
+      stance: body.decision.stance,
+      conviction: body.decision.conviction,
+      received_at: new Date().toISOString(),
+    }));
     return new Response('ok');
   },
 };
 ```
 
-The trade lives on Alpaca's books. TAL never sees your broker credentials and doesn't know whether you executed.
+What you do with your own log is up to you. The app does not see your receiver's data and does not know whether you acted on an assessment.
 
 ## Mechanics
 
-- Webhooks fire **once per debate**, after `session.complete`, before the WebSocket closes.
-- Each webhook gets a **5-second timeout**. Multiple webhooks fire in parallel, total wall-clock is roughly the slowest receiver.
-- **No retry queue** in v1. If a receiver is down, it shows up as `failed` in the post-debate report and that's the end of it. Re-run the analysis if you care.
-- Stub debates fire webhooks too. Handy for testing your receiver without burning provider quota.
-- The post-debate **Webhooks** card on the Analyze page shows `fired`, `filtered`, or `failed` per receiver. URLs are never displayed, bot tokens stay private.
+- Webhooks fire **once per completed analysis**, after the assessment is produced and the run is saved to History, before the stream closes.
+- Each webhook gets a **5-second timeout**. Multiple webhooks fire in parallel, so total wait is roughly the slowest receiver.
+- **No retry queue.** If a receiver is down, it shows up as `failed` in the post-analysis report and that is the end of it. Run the analysis again if you need the delivery.
+- A run that stops early (a Cost Guard stop, a token cap, or an error) produces no assessment and fires no webhooks.
+- Stub analyses (no LLM key configured) fire webhooks too. Handy for testing your receiver without spending provider quota.
+- The **Webhooks** card under the debate on the Analyze page shows `fired`, `filtered`, or `failed` per receiver. A filtered receiver shows "filter did not match"; a failed one shows the error or HTTP status. URLs are never displayed in full, so bot tokens stay private.
 
 ## Privacy
 
-- Webhook URLs are stored via Electron's `safeStorage`, encrypted at rest by the OS keychain (Keychain on macOS, DPAPI on Windows, libsecret on Linux).
-- URLs and HMAC secrets never appear in the engine's stderr logs.
-- URLs never appear in the `webhook.report` event the renderer receives, so they never end up in History replays.
+- The webhook list, including URLs, bot tokens and HMAC secrets, is stored through Electron's `safeStorage`, encrypted at rest by the operating system (the macOS Keychain).
+- The settings list shows only the host of each URL.
+- URLs and HMAC secrets never appear in the engine's logs.
+- URLs never appear in the `webhook.report` event the app receives, so they never end up in History replays.
+## What webhooks do not do
 
-## What v1 doesn't do
-
-- No retry queue. If a webhook fails, it fails for that debate.
-- No batch / summary webhooks across multiple tickers, fires per single ticker. Multi-ticker batch runner is Phase 8b.
-- No per-receiver custom payload template, Telegram/Slack/Discord get short-form text; Generic gets the full JSON. Phase 8b candidate.
-- No scheduled / cron-style runs. Set this up via your own watchlist + cron + the engine HTTP API if you want morning auto-analysis today.
+- No retry queue. If a webhook fails, it fails for that analysis.
+- No batch summary webhook across tickers. A Watchlist **Run all** batch fires per ticker.
+- No per-receiver custom payload template. Telegram, Slack and Discord get the short text message; Generic gets the full JSON.
+- No scheduled runs. Webhooks fire only after an analysis you start.
