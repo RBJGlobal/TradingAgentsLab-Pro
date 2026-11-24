@@ -91,8 +91,9 @@ export async function runAnalysis(
   const maxTokens = opts.maxTokens ?? 400;
   const providerConfig = await resolveProviderConfig(opts, maxTokens);
   const dataConfig = await resolveDataConfig();
-  // Optional Alpha Vantage data key — unlocks the news/social/fundamentals
-  // analysts in the Pro engine. Absent => market-only (free).
+  // Optional Alpha Vantage data key. The engine uses it only when the user
+  // picked Alpha Vantage as the News or Fundamentals source (Settings,
+  // Analysis); otherwise every analyst runs on the free sources.
   const alphaVantageKey = (await getSecret('data:alpha-vantage')) ?? undefined;
 
   // Pro is a distinct build: every live run drives the real LangGraph "full"

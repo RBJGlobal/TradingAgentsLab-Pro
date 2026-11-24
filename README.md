@@ -38,7 +38,7 @@ Pro makes dozens of model calls per run, billed to credentials you own:
 
 - **Anthropic, OpenAI, Google Gemini, OpenRouter and more** via API key.
 - **ChatGPT subscription (OAuth)**: sign in with your ChatGPT plan (Plus, Pro, Team) and the full pipeline runs at no per-token cost within your plan limits.
-- Optional **Alpha Vantage** key unlocks the fundamentals, news, and social analysts; without it the market analyst runs on free data.
+- All four analysts (market, social, news, fundamentals) run on free data by default. An optional **Alpha Vantage** key can be picked as the news or fundamentals source, with Yahoo Finance as the fallback.
 
 A built-in Cost Guard reserves against your configured daily, weekly, and monthly caps before every run and meters actual token usage while it streams.
 

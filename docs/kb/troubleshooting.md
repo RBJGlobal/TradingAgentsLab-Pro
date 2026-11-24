@@ -99,7 +99,7 @@ For fuller coverage, connect a free Alpaca account under **Settings → Data Pro
 
 ### A Full analysis lacks social or fundamentals content
 
-Only the analysts ticked under **Settings → Analysis → Analysts** run in a Full analysis, and the default is Market only. Tick the others you want. The Settings note says the News, Social and Fundamentals analysts use an Alpha Vantage key, which you can add under **Settings → Data Providers**.
+Only the analysts ticked under **Settings → Analysis → Analysts** run in a Full analysis, and the default is Market only. Tick the others you want. All four run on free data; no extra key is needed.
 
 ---
 

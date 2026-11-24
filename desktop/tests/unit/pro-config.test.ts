@@ -141,6 +141,45 @@ describe('news source (Part B)', () => {
   });
 });
 
+describe('fundamentals source (Alpha Vantage opt-in)', () => {
+  it('defaults to yfinance and is always sent on the wire', () => {
+    expect(DEFAULT_PRO_CONFIG.fundamentalsSource).toBe('yfinance');
+    expect(assembleProConfig('m', 'anthropic', base).fundamentals_source).toBe('yfinance');
+  });
+
+  it('sends alpha_vantage when chosen, for news and fundamentals', () => {
+    const cfg = assembleProConfig('m', 'anthropic', {
+      ...base,
+      newsSource: 'alpha_vantage',
+      fundamentalsSource: 'alpha_vantage',
+    });
+    expect(cfg.news_source).toBe('alpha_vantage');
+    expect(cfg.fundamentals_source).toBe('alpha_vantage');
+  });
+
+  it('coerces an unknown stored value back to yfinance', () => {
+    localStorage.setItem(
+      'tal:pro-config',
+      JSON.stringify({ ...base, fundamentalsSource: 'bloomberg' }),
+    );
+    expect(loadProConfig().fundamentalsSource).toBe('yfinance');
+  });
+
+  it('fills the field for a blob saved before it existed', () => {
+    const { fundamentalsSource: _drop, ...old } = base;
+    void _drop;
+    localStorage.setItem('tal:pro-config', JSON.stringify(old));
+    expect(loadProConfig().fundamentalsSource).toBe('yfinance');
+  });
+
+  it('round-trips alpha_vantage for both sources', () => {
+    saveProConfig({ ...base, newsSource: 'alpha_vantage', fundamentalsSource: 'alpha_vantage' });
+    const got = loadProConfig();
+    expect(got.newsSource).toBe('alpha_vantage');
+    expect(got.fundamentalsSource).toBe('alpha_vantage');
+  });
+});
+
 describe('modelSupportsEffort (mirrors anthropic_client._supports_effort)', () => {
   it('accepts Sonnet 4.6+, Opus 4.5+, the Fable 5 family and the exact preview names', () => {
     expect(modelSupportsEffort('claude-sonnet-4-6')).toBe(true);

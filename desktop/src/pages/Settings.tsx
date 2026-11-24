@@ -67,14 +67,16 @@ import {
 import {
   ALL_ANALYSTS,
   ANALYST_LABEL,
-  ANALYSTS_NEEDING_DATA_KEY,
   EFFORT_LEVELS,
+  FUNDAMENTALS_SOURCES,
+  FUNDAMENTALS_SOURCE_LABEL,
   NEWS_SOURCES,
   NEWS_SOURCE_LABEL,
   loadProConfig,
   saveProConfig,
   type AnalystId,
   type EffortLevel,
+  type FundamentalsSource,
   type NewsSource,
   type ProConfigState,
 } from '../lib/pro-config';
@@ -260,8 +262,8 @@ const DATA_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'data:alpha-vantage',
     name: 'Alpha Vantage: API key',
-    note: 'Unlocks the News, Social, and Fundamentals analysts (they source data from Alpha Vantage). Without it, keep the Analysis tab on Market only, which runs free on yfinance. Alpha Vantage offers a free key; the key is sent only to Alpha Vantage on your behalf, never stored by us server-side.',
-    pillLabel: 'Analysts',
+    note: 'Optional. Lets you pick Alpha Vantage as the News or Fundamentals source on the Analysis tab (Full analysis). Without it, every analyst runs on free data. The free key has a small daily request limit; once it is reached, the run switches to Yahoo Finance. The key is sent only to Alpha Vantage on your behalf, never stored by us server-side.',
+    pillLabel: 'Optional',
     pillVariant: 'default',
     placeholder: 'Alpha Vantage API key',
   },
@@ -407,7 +409,9 @@ function Settings() {
               />
             </>
           )}
-          {active === 'analysis' && <ProAnalysisTab />}
+          {active === 'analysis' && (
+            <ProAnalysisTab hasAvKey={listingByKey.has('data:alpha-vantage')} />
+          )}
           {active === 'webhooks' && <WebhooksTab availability={availability} />}
           {active === 'channels' && <ChannelsTab />}
           {active === 'costguard' && <CostGuardTab />}
@@ -1911,7 +1915,7 @@ function AlphaVantageSignupCallout({
   );
 }
 
-function ProAnalysisTab() {
+function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
   // Local mirror of the persisted Pro run-config. Writes go straight to
   // localStorage (no engine round-trip), so we persist on each change and
   // reflect it immediately. `tokenCapDraft` is kept as a separate string so
@@ -1953,9 +1957,9 @@ function ProAnalysisTab() {
       <fieldset className={styles.formGroup}>
         <legend className={styles.formLegend}>Analysts</legend>
         <p className={styles.formHint}>
-          Which analysts run in the diligence. Market is free (yfinance). News,
-          Social, and Fundamentals require an Alpha Vantage data key (add one
-          under Data Providers). Without a data key, keep Market only.
+          Which analysts run in the diligence. All four run on free data (Yahoo
+          Finance, plus Alpaca news when connected). Each extra analyst adds
+          model calls, so a run with more analysts costs more.
         </p>
         {ALL_ANALYSTS.map((id) => (
           <label key={id} className={styles.toggleRow}>
@@ -1966,9 +1970,6 @@ function ProAnalysisTab() {
             />
             <span>
               <strong>{ANALYST_LABEL[id]}</strong>
-              {ANALYSTS_NEEDING_DATA_KEY.includes(id) && (
-                <div className={styles.formHint}>Requires an Alpha Vantage data key</div>
-              )}
             </span>
           </label>
         ))}
@@ -1980,7 +1981,9 @@ function ProAnalysisTab() {
           Where the News analyst pulls headlines. Auto prefers Alpaca (Benzinga)
           when you have Alpaca connected under Data Providers, and falls back to
           Yahoo Finance. Yahoo can return no headlines for some tickers, so Alpaca
-          is the better default when connected.
+          is the better default when connected. Alpha Vantage uses your own key
+          (add it under Data Providers) and switches to Yahoo if the key reaches
+          its daily limit. The News and Social analysts both read this source.
         </p>
         <div className={styles.costInputRow}>
           <label className={styles.costInputLabel}>
@@ -1993,13 +1996,56 @@ function ProAnalysisTab() {
               }
             >
               {NEWS_SOURCES.map((s) => (
-                <option key={s} value={s}>
+                <option key={s} value={s} disabled={s === 'alpha_vantage' && !hasAvKey}>
                   {NEWS_SOURCE_LABEL[s]}
                 </option>
               ))}
             </select>
           </label>
         </div>
+        {state.newsSource === 'alpha_vantage' && !hasAvKey && (
+          <p className={styles.formHint} data-testid="news-av-no-key">
+            No Alpha Vantage key is saved, so runs use Yahoo Finance.
+          </p>
+        )}
+      </fieldset>
+
+      <fieldset className={styles.formGroup}>
+        <legend className={styles.formLegend}>Fundamentals source</legend>
+        <p className={styles.formHint}>
+          Where the Fundamentals analyst gets the company overview, financial
+          statements and insider transactions. Yahoo Finance is free. Alpha
+          Vantage uses your own key (add it under Data Providers) and switches to
+          Yahoo if the key reaches its daily limit. Prices and indicators always
+          come from Yahoo Finance.
+        </p>
+        <div className={styles.costInputRow}>
+          <label className={styles.costInputLabel}>
+            Source
+            <select
+              className={styles.costInputField}
+              value={state.fundamentalsSource}
+              data-testid="fundamentals-source"
+              onChange={(e) =>
+                persist({
+                  ...state,
+                  fundamentalsSource: e.target.value as FundamentalsSource,
+                })
+              }
+            >
+              {FUNDAMENTALS_SOURCES.map((s) => (
+                <option key={s} value={s} disabled={s === 'alpha_vantage' && !hasAvKey}>
+                  {FUNDAMENTALS_SOURCE_LABEL[s]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {state.fundamentalsSource === 'alpha_vantage' && !hasAvKey && (
+          <p className={styles.formHint} data-testid="fundamentals-av-no-key">
+            No Alpha Vantage key is saved, so runs use Yahoo Finance.
+          </p>
+        )}
       </fieldset>
 
       <fieldset className={styles.formGroup}>
