@@ -1257,8 +1257,7 @@ function AboutTab({ availability, secretsCount }: AboutTabProps) {
           <dd className={styles.aboutValue}>
             RBJ Global LLC
             <div className={styles.aboutHint}>
-              A standalone trading research companion in the Clawless product
-              family.
+              A standalone trading companion for Clawless.
             </div>
           </dd>
         </div>
