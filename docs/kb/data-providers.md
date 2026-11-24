@@ -125,9 +125,9 @@ Whenever another source is in use, Yahoo Finance stays as the fallback, so an em
 With a key saved, two settings under **Settings → Analysis** can use it in a Full analysis:
 
 - **News source → Alpha Vantage**: the News and Social sentiment analysts read Alpha Vantage news.
-- **Fundamentals source → Alpha Vantage**: the Fundamentals analyst reads the company overview, the income statement, balance sheet and cash flow, and insider transactions from Alpha Vantage. The default is Yahoo Finance.
+- **Fundamentals source → Alpha Vantage**: the Fundamentals analyst reads the company overview, the income statement, balance sheet and cash flow from Alpha Vantage. The default is Yahoo Finance.
 
-Prices and technical indicators always come from Yahoo Finance. Alpha Vantage's free key has a small daily request limit. When it is reached, or the key is rejected, the run switches to Yahoo Finance for the rest of that data instead of failing. If you delete the key, runs use Yahoo Finance even if a setting still names Alpha Vantage. Quick analysis does not use these settings.
+Prices and technical indicators always come from Yahoo Finance. Alpha Vantage's free key has a small daily request limit. When it is reached, or the key is rejected, the run switches to Yahoo Finance for the rest of that data instead of failing. If Alpha Vantage has no data for a symbol (for example the company overview of an ETF), that request also uses Yahoo Finance. If you delete the key, runs use Yahoo Finance even if a setting still names Alpha Vantage. Alpha Vantage news items are longer than Yahoo's, so a run that reads them uses more model tokens and costs more. Quick analysis does not use these settings.
 
 The key is stored in the encrypted credential store like your other keys and is sent only to Alpha Vantage.
 

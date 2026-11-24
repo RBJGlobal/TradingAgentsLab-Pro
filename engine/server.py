@@ -777,6 +777,10 @@ def build_app(*, token: str) -> FastAPI:
                             str(start.get("alpha_vantage_key") or "").strip()
                         ),
                     )
+                    if any("alpha_vantage" in c for c in choices.values()):
+                        from .pro_vendors import register_alpha_vantage_guards
+
+                        register_alpha_vantage_guards()
                     chain = choices["get_news"]
                     if "alpaca" in chain:
                         alpaca_news.register_alpaca_news_vendor()

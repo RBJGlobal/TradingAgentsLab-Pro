@@ -86,8 +86,7 @@ export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
   alpha_vantage: 'Alpha Vantage (your key, Yahoo fallback)',
 };
 
-/** Where the Fundamentals analyst (and insider transactions) gets company
- * data. `yfinance` is the free default; `alpha_vantage` is opt-in and uses the
+/** Where the Fundamentals analyst gets company data. `yfinance` is the free default; `alpha_vantage` is opt-in and uses the
  * user's key first, with Yahoo as the fallback (for example when the free
  * key's daily limit is reached). */
 export const FUNDAMENTALS_SOURCES = ['yfinance', 'alpha_vantage'] as const;

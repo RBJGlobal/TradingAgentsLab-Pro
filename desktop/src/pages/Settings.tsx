@@ -1983,7 +1983,8 @@ function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
           Yahoo Finance. Yahoo can return no headlines for some tickers, so Alpaca
           is the better default when connected. Alpha Vantage uses your own key
           (add it under Data Providers) and switches to Yahoo if the key reaches
-          its daily limit. The News and Social analysts both read this source.
+          its daily limit; its news is longer, so runs that read it cost more.
+          The News and Social analysts both read this source.
         </p>
         <div className={styles.costInputRow}>
           <label className={styles.costInputLabel}>
@@ -2013,8 +2014,8 @@ function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
       <fieldset className={styles.formGroup}>
         <legend className={styles.formLegend}>Fundamentals source</legend>
         <p className={styles.formHint}>
-          Where the Fundamentals analyst gets the company overview, financial
-          statements and insider transactions. Yahoo Finance is free. Alpha
+          Where the Fundamentals analyst gets the company overview and financial
+          statements. Yahoo Finance is free. Alpha
           Vantage uses your own key (add it under Data Providers) and switches to
           Yahoo if the key reaches its daily limit. Prices and indicators always
           come from Yahoo Finance.
