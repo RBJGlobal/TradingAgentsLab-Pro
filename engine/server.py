@@ -764,10 +764,24 @@ def build_app(*, token: str) -> FastAPI:
                         and bool(dc.get("key_id"))
                         and bool(dc.get("secret"))
                     )
-                    chain = alpaca_news.news_vendor_chain(
-                        str(pro_config_raw.get("news_source") or "auto"),
-                        alpaca_ready,
+                    from .pro_vendors import pro_tool_vendors
+
+                    # News + Fundamentals source choices -> per-tool vendor
+                    # chains. Alpha Vantage only when picked AND a key came
+                    # with this run; Yahoo is always the tail fallback.
+                    choices = pro_tool_vendors(
+                        pro_config_raw.get("news_source"),
+                        pro_config_raw.get("fundamentals_source"),
+                        alpaca_ready=alpaca_ready,
+                        av_ready=bool(
+                            str(start.get("alpha_vantage_key") or "").strip()
+                        ),
                     )
+                    if any("alpha_vantage" in c for c in choices.values()):
+                        from .pro_vendors import register_alpha_vantage_guards
+
+                        register_alpha_vantage_guards()
+                    chain = choices["get_news"]
                     if "alpaca" in chain:
                         alpaca_news.register_alpaca_news_vendor()
                     # Creds only when Alpaca is actually connected; cleared
@@ -778,7 +792,7 @@ def build_app(*, token: str) -> FastAPI:
                         dc.get("secret") if alpaca_ready else None,
                     )
                     tv = dict(pro_lib_config.get("tool_vendors") or {})
-                    tv["get_news"] = chain
+                    tv.update(choices)
                     pro_lib_config["tool_vendors"] = tv
                 reserve_model = (
                     (pro_lib_config or {}).get("deep_think_llm") or config.model
@@ -885,9 +899,10 @@ def build_app(*, token: str) -> FastAPI:
                         if isinstance(raw_cap, (int, float)) and raw_cap > 0
                         else None
                     )
-                    # Optional Alpha Vantage data key: unlocks the news / social
-                    # / fundamentals analysts. Absent -> market-only (yfinance,
-                    # free). Sent per-run (the engine persists no secrets).
+                    # Optional Alpha Vantage data key. Used only when the user
+                    # picked Alpha Vantage as the News or Fundamentals source
+                    # (see pro_vendors); otherwise every analyst runs on the free
+                    # sources. Sent per-run (the engine persists no secrets).
                     av_key = start.get("alpha_vantage_key") or None
                     # Mid-run USD stop, decided at reserve time and stored on
                     # the reservation (cost_guard._run_limit): the cap headroom

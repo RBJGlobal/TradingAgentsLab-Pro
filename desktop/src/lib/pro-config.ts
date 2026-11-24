@@ -19,9 +19,10 @@ import { migrateSavedModel } from './provider-models';
 
 const STORAGE_KEY = 'tal:pro-config';
 
-/** All four analyst nodes the full graph supports. Only `market` is
- * key-free (yfinance); `social`/`news`/`fundamentals` route through Alpha
- * Vantage and need a data key (surfaced in Settings as a fast-follow). */
+/** All four analyst nodes the full graph supports. All four run on free
+ * sources by default (Yahoo Finance, plus Alpaca news when connected). An
+ * Alpha Vantage key is optional and is used only when the user picks it as
+ * the News or Fundamentals source below. */
 export const ALL_ANALYSTS = ['market', 'social', 'news', 'fundamentals'] as const;
 export type AnalystId = (typeof ALL_ANALYSTS)[number];
 
@@ -32,8 +33,6 @@ export const ANALYST_LABEL: Record<AnalystId, string> = {
   fundamentals: 'Fundamentals',
 };
 
-/** Analysts that require an Alpha Vantage data key. `market` is free. */
-export const ANALYSTS_NEEDING_DATA_KEY: AnalystId[] = ['social', 'news', 'fundamentals'];
 
 /** Anthropic reasoning-effort is the ONLY effort control we surface today,
  * and it applies to BOTH the deep and quick clients (the library threads
@@ -74,15 +73,28 @@ export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 /** Where the News analyst pulls headlines (Part B). `auto` prefers Alpaca's
  * Benzinga feed when Alpaca is connected (under Data Providers) and falls back
  * to Yahoo; `alpaca` forces Alpaca-first (still Yahoo fallback); `yfinance`
- * forces Yahoo only. Yahoo stays the fallback whenever Alpaca is in the chain,
- * so an empty primary source never blanks the analyst. */
-export const NEWS_SOURCES = ['auto', 'alpaca', 'yfinance'] as const;
+ * forces Yahoo only; `alpha_vantage` uses the user's Alpha Vantage key first
+ * (opt-in). Yahoo stays the fallback whenever another source is in the chain,
+ * so an empty or rate-limited primary never blanks the analyst. */
+export const NEWS_SOURCES = ['auto', 'alpaca', 'yfinance', 'alpha_vantage'] as const;
 export type NewsSource = (typeof NEWS_SOURCES)[number];
 
 export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
   auto: 'Auto (Alpaca when connected, else Yahoo)',
   alpaca: 'Alpaca (Benzinga)',
   yfinance: 'Yahoo Finance',
+  alpha_vantage: 'Alpha Vantage (your key, Yahoo fallback)',
+};
+
+/** Where the Fundamentals analyst gets company data. `yfinance` is the free default; `alpha_vantage` is opt-in and uses the
+ * user's key first, with Yahoo as the fallback (for example when the free
+ * key's daily limit is reached). */
+export const FUNDAMENTALS_SOURCES = ['yfinance', 'alpha_vantage'] as const;
+export type FundamentalsSource = (typeof FUNDAMENTALS_SOURCES)[number];
+
+export const FUNDAMENTALS_SOURCE_LABEL: Record<FundamentalsSource, string> = {
+  yfinance: 'Yahoo Finance',
+  alpha_vantage: 'Alpha Vantage (your key, Yahoo fallback)',
 };
 
 /** How a Pro run is analyzed (Pro 1.1.10+).
@@ -125,6 +137,8 @@ export interface ProConfigState {
   selectedAnalysts: AnalystId[];
   /** News analyst headline source (Part B). Default `auto`. */
   newsSource: NewsSource;
+  /** Fundamentals source. Default `yfinance`. */
+  fundamentalsSource: FundamentalsSource;
   /** Hard token-cap backstop; null = no cap (rely on the pre-flight reserve). */
   tokenCap: number | null;
 }
@@ -138,6 +152,7 @@ export const DEFAULT_PRO_CONFIG: ProConfigState = {
   maxRiskRounds: 1,
   selectedAnalysts: ['market'],
   newsSource: 'auto',
+  fundamentalsSource: 'yfinance',
   tokenCap: null,
 };
 
@@ -157,6 +172,11 @@ export function loadProConfig(): ProConfigState {
     const newsSource = (NEWS_SOURCES as readonly string[]).includes(parsed.newsSource as string)
       ? (parsed.newsSource as NewsSource)
       : DEFAULT_PRO_CONFIG.newsSource;
+    const fundamentalsSource = (FUNDAMENTALS_SOURCES as readonly string[]).includes(
+      parsed.fundamentalsSource as string,
+    )
+      ? (parsed.fundamentalsSource as FundamentalsSource)
+      : DEFAULT_PRO_CONFIG.fundamentalsSource;
     const runMode = (RUN_MODES as readonly string[]).includes(parsed.runMode as string)
       ? (parsed.runMode as RunMode)
       : DEFAULT_PRO_CONFIG.runMode;
@@ -166,6 +186,7 @@ export function loadProConfig(): ProConfigState {
       // Never allow an empty analyst set (a run with zero analysts is invalid).
       selectedAnalysts: analysts.length > 0 ? analysts : DEFAULT_PRO_CONFIG.selectedAnalysts,
       newsSource,
+      fundamentalsSource,
       runMode,
     };
   } catch {
@@ -233,6 +254,7 @@ export function assembleProConfig(
     max_risk_discuss_rounds: state.maxRiskRounds,
     selected_analysts: state.selectedAnalysts.slice(),
     news_source: state.newsSource,
+    fundamentals_source: state.fundamentalsSource,
   };
   if (state.tokenCap && state.tokenCap > 0) {
     cfg.token_cap = state.tokenCap;

@@ -286,9 +286,13 @@ export interface ProConfig {
   max_risk_discuss_rounds?: number;
   effort?: string;
   selected_analysts?: string[];
-  /** News analyst headline source: 'auto' | 'alpaca' | 'yfinance'. Absent =
-   * 'auto' (engine prefers Alpaca when connected, else yfinance). */
+  /** News analyst headline source: 'auto' | 'alpaca' | 'yfinance' |
+   * 'alpha_vantage'. Absent = 'auto' (engine prefers Alpaca when connected,
+   * else yfinance). 'alpha_vantage' needs the Alpha Vantage key on the run. */
   news_source?: string;
+  /** Fundamentals analyst source: 'yfinance' | 'alpha_vantage'. Absent =
+   * 'yfinance'. 'alpha_vantage' needs the Alpha Vantage key on the run. */
+  fundamentals_source?: string;
   token_cap?: number;
 }
 

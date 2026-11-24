@@ -33,7 +33,7 @@ Pro can run this two ways, chosen with the **Mode** picker on the Analyze page: 
 | Analysts | Call data tools at run time | Read a data summary the app fetched first |
 | Debate | Bull and bear researchers argue for 1 to 4 rounds, then a risk team does the same | One turn per agent |
 | Models | A deep model and a quick model (see below) | The one model you picked |
-| Settings that apply | The Analysis tab: analysts, news source, debate rounds, reasoning effort, token cap | None of them |
+| Settings that apply | The Analysis tab: analysts, news source, fundamentals source, debate rounds, reasoning effort, token cap | None of them |
 | Typical time | The page shows "Typically 8 to 15 minutes" | Usually about a minute |
 | Providers | API key or OpenAI ChatGPT sign-in | Also local runtimes (Ollama, LM Studio) |
 | Cost Guard | Pro full-graph estimate, with a mid-run stop | The simplified estimate used by the Lite app |
@@ -46,7 +46,7 @@ Full analysis runs the real upstream graph with the library's own agent prompts 
 
 **Deep and quick models.** The graph uses two model roles. The research manager and the portfolio manager use the deep model. The analysts, bull and bear researchers, trader and risk analysts, and the scoring call use the quick model. In Pro 1.1.10 both roles use the model you pick on the Analyze page; there is no separate picker for each role.
 
-**Analysts.** Settings, Analysis lists four analyst seats: Market (technical), Social sentiment, News and Fundamentals. A fresh install runs Market only, which needs no data key. Settings marks the other three as requiring an Alpha Vantage key, added under Data Providers.
+**Analysts.** Settings, Analysis lists four analyst seats: Market (technical), Social sentiment, News and Fundamentals. A fresh install runs Market only. All four run on free data, so you can tick the others without adding a key. Each extra analyst adds model calls, so the run costs more.
 
 **Rounds.** Settings, Analysis also sets research rounds (bull against bear) and risk rounds (aggressive, conservative, neutral), each from 1 to 4. The default is 1 of each. More rounds mean a deeper and more expensive run. With the defaults and Market only, a run shows 1 analyst message, 3 researcher messages, 1 trader message and 4 risk messages.
 
@@ -54,7 +54,7 @@ Full analysis runs the real upstream graph with the library's own agent prompts 
 
 **Token cap.** An optional per-run limit on total tokens. The run stops with an "Analysis stopped" notice when it is crossed. Because the check runs after each model call, a run can slightly pass the cap.
 
-**News source.** Settings, Analysis, News source sets where the News analyst gets headlines: **Auto (Alpaca when connected, else Yahoo)**, **Alpaca (Benzinga)** or **Yahoo Finance**. Yahoo Finance stays as the fallback whenever Alpaca is in the chain. See [data-providers.md](data-providers.md).
+**News source.** Settings, Analysis, News source sets where the News analyst gets headlines: **Auto (Alpaca when connected, else Yahoo)**, **Alpaca (Benzinga)**, **Yahoo Finance** or **Alpha Vantage** (with your own key). Yahoo Finance stays as the fallback whenever another source is in the chain. A separate **Fundamentals source** setting chooses Yahoo Finance (the default) or Alpha Vantage for the Fundamentals analyst. See [data-providers.md](data-providers.md).
 
 **Memory.** After a Full run the engine saves the committee's decision to a local memory log, and a later run on the same ticker can read earlier entries. It is best-effort and stays on your machine.
 
