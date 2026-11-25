@@ -62,13 +62,22 @@ def test_existing_news_choices_unchanged():
     )
 
 
-def test_news_alpha_vantage_with_key():
+def test_news_alpha_vantage_with_key_falls_back_to_alpaca_then_yahoo():
+    # Alpha Vantage news is a paid endpoint; with Alpaca connected the next
+    # vendor is Alpaca, not Yahoo. Global news has no Alpaca vendor.
     out = pro_tool_vendors("alpha_vantage", "yfinance", alpaca_ready=True, av_ready=True)
+    assert out == _expect("alpha_vantage,alpaca,yfinance", "alpha_vantage,yfinance")
+
+
+def test_news_alpha_vantage_with_key_without_alpaca():
+    out = pro_tool_vendors("alpha_vantage", "yfinance", alpaca_ready=False, av_ready=True)
     assert out == _expect("alpha_vantage,yfinance", "alpha_vantage,yfinance")
 
 
-def test_news_alpha_vantage_without_key_degrades_to_yahoo():
+def test_news_alpha_vantage_without_key_degrades_to_auto():
     out = pro_tool_vendors("alpha_vantage", None, alpaca_ready=True, av_ready=False)
+    assert out == _expect("alpaca,yfinance")
+    out = pro_tool_vendors("alpha_vantage", None, alpaca_ready=False, av_ready=False)
     assert out == _expect("yfinance")
 
 
@@ -208,3 +217,32 @@ def test_guard_makes_empty_av_body_fall_back(monkeypatch, _restore_config):
     assert not getattr(getattr(impl, "__wrapped__", None), "_tal_av_guard", False)
     _apply(pro_tool_vendors("auto", "alpha_vantage", alpaca_ready=False, av_ready=True))
     assert interface.route_to_vendor("get_fundamentals", "SPY", "2026-11-20") == "YAHOO"
+
+
+def test_premium_notice_falls_back_to_alpaca(monkeypatch, _restore_config):
+    """A free key on NEWS_SENTIMENT gets Alpha Vantage's "premium endpoint"
+    notice (verified 2026-11-25). The real request helper must classify it as a
+    rate limit so the chain moves on to Alpaca."""
+    from tradingagents.dataflows import alpha_vantage_common
+
+    class _Resp:
+        text = (
+            '{"Information": "Thank you for using Alpha Vantage! This is a premium '
+            'endpoint. You may subscribe to any of the premium plans at '
+            'https://www.alphavantage.co/premium/ to instantly unlock all premium endpoints"}'
+        )
+
+        def raise_for_status(self):
+            return None
+
+    monkeypatch.setenv("ALPHA_VANTAGE_API_KEY", "TESTKEY")
+    monkeypatch.setattr(alpha_vantage_common.requests, "get", lambda *a, **k: _Resp())
+    monkeypatch.setitem(interface.VENDOR_METHODS["get_news"], "alpaca", lambda *a, **k: "ALPACA")
+
+    def yahoo(*a, **k):  # pragma: no cover - must NOT run
+        raise AssertionError("Yahoo should not run when Alpaca answers")
+
+    monkeypatch.setitem(interface.VENDOR_METHODS["get_news"], "yfinance", yahoo)
+    register_alpha_vantage_guards()
+    _apply(pro_tool_vendors("alpha_vantage", None, alpaca_ready=True, av_ready=True))
+    assert interface.route_to_vendor("get_news", "AAPL", "2026-11-18", "2026-11-25") == "ALPACA"

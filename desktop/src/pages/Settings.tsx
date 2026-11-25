@@ -262,7 +262,7 @@ const DATA_PROVIDERS: SecretRow[] = [
   {
     secretKey: 'data:alpha-vantage',
     name: 'Alpha Vantage: API key',
-    note: 'Optional. Lets you pick Alpha Vantage as the News or Fundamentals source on the Analysis tab (Full analysis). Without it, every analyst runs on free data. The free key has a small daily request limit; once it is reached, the run switches to Yahoo Finance. The key is sent only to Alpha Vantage on your behalf, never stored by us server-side.',
+    note: 'Optional. Lets you pick Alpha Vantage as the News or Fundamentals source on the Analysis tab (Full analysis). Without it, every analyst runs on free data. A free Alpha Vantage key covers financial statements only; news and the company overview need a paid Alpha Vantage plan. Anything Alpha Vantage does not return comes from Alpaca or Yahoo Finance instead. The key is sent only to Alpha Vantage on your behalf, never stored by us server-side.',
     pillLabel: 'Optional',
     pillVariant: 'default',
     placeholder: 'Alpha Vantage API key',
@@ -1888,8 +1888,18 @@ function AlphaVantageSignupCallout({
       <div className={styles.avCalloutText}>
         <strong>No Alpha Vantage key yet?</strong>
         <div className={styles.formHint}>
-          Get one free without leaving the app. We open the signup, capture your
-          key the moment it is issued, and fill it in for you.
+          Get one without leaving the app. We open the signup, capture your
+          key the moment it is issued, and fill it in for you. A free key covers
+          financial statements only. News and the company overview need a paid
+          Alpha Vantage plan.{' '}
+          <a
+            href="https://www.alphavantage.co/premium/"
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="av-paid-plans"
+          >
+            See paid plans
+          </a>
         </div>
         {status === 'saved' && (
           <p className={styles.formSuccess}>Key captured and saved.</p>
@@ -1909,7 +1919,7 @@ function AlphaVantageSignupCallout({
         onClick={() => void onGetKey()}
         disabled={status === 'opening'}
       >
-        {status === 'opening' ? 'Opening…' : 'Get a free key'}
+        {status === 'opening' ? 'Opening…' : 'Get a key'}
       </button>
     </div>
   );
@@ -1981,10 +1991,11 @@ function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
           Where the News analyst pulls headlines. Auto prefers Alpaca (Benzinga)
           when you have Alpaca connected under Data Providers, and falls back to
           Yahoo Finance. Yahoo can return no headlines for some tickers, so Alpaca
-          is the better default when connected. Alpha Vantage uses your own key
-          (add it under Data Providers) and switches to Yahoo if the key reaches
-          its daily limit; its news is longer, so runs that read it cost more.
-          The News and Social analysts both read this source.
+          is the better default when connected. Alpha Vantage news needs a paid
+          Alpha Vantage plan and your key (add it under Data Providers); without
+          a paid plan, or once the plan's limit is reached, the run uses Alpaca
+          when connected, else Yahoo. Its news is longer, so runs that read it
+          cost more. The News and Social analysts both read this source.
         </p>
         <div className={styles.costInputRow}>
           <label className={styles.costInputLabel}>
@@ -2006,7 +2017,8 @@ function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
         </div>
         {state.newsSource === 'alpha_vantage' && !hasAvKey && (
           <p className={styles.formHint} data-testid="news-av-no-key">
-            No Alpha Vantage key is saved, so runs use Yahoo Finance.
+            No Alpha Vantage key is saved, so runs use Alpaca when connected,
+            else Yahoo Finance.
           </p>
         )}
       </fieldset>
@@ -2015,10 +2027,11 @@ function ProAnalysisTab({ hasAvKey }: { hasAvKey: boolean }) {
         <legend className={styles.formLegend}>Fundamentals source</legend>
         <p className={styles.formHint}>
           Where the Fundamentals analyst gets the company overview and financial
-          statements. Yahoo Finance is free. Alpha
-          Vantage uses your own key (add it under Data Providers) and switches to
-          Yahoo if the key reaches its daily limit. Prices and indicators always
-          come from Yahoo Finance.
+          statements. Yahoo Finance is free. Alpha Vantage uses your own key (add
+          it under Data Providers). A free key covers the financial statements;
+          the company overview needs a paid Alpha Vantage plan, so without one it
+          comes from Yahoo Finance. Prices and indicators always come from Yahoo
+          Finance.
         </p>
         <div className={styles.costInputRow}>
           <label className={styles.costInputLabel}>

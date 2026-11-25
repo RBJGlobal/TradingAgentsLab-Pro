@@ -40,7 +40,7 @@ export function openAlphaVantageSignup(
       modal: false,
       width: 760,
       height: 800,
-      title: 'Get a free Alpha Vantage key',
+      title: 'Get an Alpha Vantage key',
       backgroundColor: '#0d1117',
       autoHideMenuBar: true,
       webPreferences: {

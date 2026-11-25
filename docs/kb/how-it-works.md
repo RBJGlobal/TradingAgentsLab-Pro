@@ -54,7 +54,7 @@ Full analysis runs the real upstream graph with the library's own agent prompts 
 
 **Token cap.** An optional per-run limit on total tokens. The run stops with an "Analysis stopped" notice when it is crossed. Because the check runs after each model call, a run can slightly pass the cap.
 
-**News source.** Settings, Analysis, News source sets where the News analyst gets headlines: **Auto (Alpaca when connected, else Yahoo)**, **Alpaca (Benzinga)**, **Yahoo Finance** or **Alpha Vantage** (with your own key). Yahoo Finance stays as the fallback whenever another source is in the chain. A separate **Fundamentals source** setting chooses Yahoo Finance (the default) or Alpha Vantage for the Fundamentals analyst. See [data-providers.md](data-providers.md).
+**News source.** Settings, Analysis, News source sets where the News analyst gets headlines: **Auto (Alpaca when connected, else Yahoo)**, **Alpaca (Benzinga)**, **Yahoo Finance** or **Alpha Vantage** (your own key; news needs a paid Alpha Vantage plan). Yahoo Finance stays as the fallback whenever another source is in the chain. A separate **Fundamentals source** setting chooses Yahoo Finance (the default) or Alpha Vantage for the Fundamentals analyst. See [data-providers.md](data-providers.md).
 
 **Memory.** After a Full run the engine saves the committee's decision to a local memory log, and a later run on the same ticker can read earlier entries. It is best-effort and stays on your machine.
 

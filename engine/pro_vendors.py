@@ -23,12 +23,17 @@ mapping:
 Rules
 -----
 * Alpha Vantage is opt-in. It is used only when the user picked it AND a key is
-  present for this run. Without a key the choice degrades to Yahoo, so a stale
-  preference can never break a run.
+  present for this run. Without a key the choice degrades to the free default
+  (news: Auto, so Alpaca when connected, else Yahoo; fundamentals: Yahoo), so
+  a stale preference can never break a run.
 * Yahoo is always the tail of every chain. ``route_to_vendor`` moves to the
   next vendor when one raises a ``VendorError`` (rate limit, missing key, no
-  data), so hitting the Alpha Vantage free tier's daily cap mid-run falls back
-  to Yahoo instead of failing the run.
+  data), so an Alpha Vantage refusal falls back instead of failing the run.
+* What a free Alpha Vantage key covers (checked 2026-11-25): the income
+  statement, balance sheet, cash flow and insider transactions. News
+  (NEWS_SENTIMENT) and the company overview (OVERVIEW) answer "premium
+  endpoint" without a paid plan; the router treats that as a rate limit and
+  falls back (news: Alpaca when connected, then Yahoo; overview: Yahoo).
 * Prices and technical indicators stay on Yahoo: the market analyst is not
   part of this choice (Alpha Vantage's adjusted daily series is premium-only).
 """
@@ -83,9 +88,19 @@ def pro_tool_vendors(
     # choice (an Alpha Vantage pick would outlive switching back to Yahoo).
     out: dict[str, str] = {}
     if news == "alpha_vantage":
-        chain = _AV_THEN_YAHOO if av_ready else "yfinance"
-        out["get_news"] = chain
-        out["get_global_news"] = chain
+        # Alpha Vantage's news endpoint needs a paid plan; a free key gets a
+        # "premium endpoint" notice (raised as a rate-limit error), so the
+        # fallback matters on every free-key run. Fall back to Alpaca when it
+        # is connected (reliable), then Yahoo. Global news has no Alpaca
+        # vendor, so it stays Alpha Vantage then Yahoo.
+        if av_ready:
+            out["get_news"] = (
+                "alpha_vantage,alpaca,yfinance" if alpaca_ready else _AV_THEN_YAHOO
+            )
+            out["get_global_news"] = _AV_THEN_YAHOO
+        else:
+            out["get_news"] = alpaca_news.news_vendor_chain("auto", alpaca_ready)
+            out["get_global_news"] = "yfinance"
     else:
         out["get_news"] = alpaca_news.news_vendor_chain(news, alpaca_ready)
         out["get_global_news"] = "yfinance"
