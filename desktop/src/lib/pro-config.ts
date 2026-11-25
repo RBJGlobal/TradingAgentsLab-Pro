@@ -83,18 +83,19 @@ export const NEWS_SOURCE_LABEL: Record<NewsSource, string> = {
   auto: 'Auto (Alpaca when connected, else Yahoo)',
   alpaca: 'Alpaca (Benzinga)',
   yfinance: 'Yahoo Finance',
-  alpha_vantage: 'Alpha Vantage (your key, Yahoo fallback)',
+  alpha_vantage: 'Alpha Vantage (paid plan, falls back to Alpaca or Yahoo)',
 };
 
-/** Where the Fundamentals analyst gets company data. `yfinance` is the free default; `alpha_vantage` is opt-in and uses the
- * user's key first, with Yahoo as the fallback (for example when the free
- * key's daily limit is reached). */
+/** Where the Fundamentals analyst gets company data. `yfinance` is the free
+ * default; `alpha_vantage` is opt-in and uses the user's key first, with Yahoo
+ * as the fallback. A free key covers the statements; the company overview is
+ * a paid Alpha Vantage endpoint, so without a paid plan it comes from Yahoo. */
 export const FUNDAMENTALS_SOURCES = ['yfinance', 'alpha_vantage'] as const;
 export type FundamentalsSource = (typeof FUNDAMENTALS_SOURCES)[number];
 
 export const FUNDAMENTALS_SOURCE_LABEL: Record<FundamentalsSource, string> = {
   yfinance: 'Yahoo Finance',
-  alpha_vantage: 'Alpha Vantage (your key, Yahoo fallback)',
+  alpha_vantage: 'Alpha Vantage (overview needs a paid plan, Yahoo fallback)',
 };
 
 /** How a Pro run is analyzed (Pro 1.1.10+).

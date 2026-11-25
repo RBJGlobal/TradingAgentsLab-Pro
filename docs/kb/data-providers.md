@@ -112,22 +112,30 @@ In a Full analysis the News analyst looks up news itself during the run, and you
 - **Auto (Alpaca when connected, else Yahoo)**: the default. Uses Alpaca (Benzinga) when your Alpaca keys are saved, otherwise Yahoo Finance.
 - **Alpaca (Benzinga)**: always tries Alpaca first. If Alpaca is not connected or returns nothing, the analyst falls back to Yahoo Finance.
 - **Yahoo Finance**: Yahoo Finance only.
-- **Alpha Vantage (your key, Yahoo fallback)**: uses your Alpha Vantage key first. You can pick it only after saving a key (see [Alpha Vantage key](#alpha-vantage-key-optional)).
+- **Alpha Vantage (paid plan, falls back to Alpaca or Yahoo)**: uses your Alpha Vantage key first. Alpha Vantage news needs a paid Alpha Vantage plan; with a free key the run uses Alpaca when connected, else Yahoo Finance. You can pick it only after saving a key (see [Alpha Vantage key](#alpha-vantage-key-optional)).
 
-Whenever another source is in use, Yahoo Finance stays as the fallback, so an empty result from one source never leaves the News analyst with no news at all. The Social sentiment analyst reads news from the same setting. The News card on the Analyze page does not follow this setting: it uses Alpaca when connected and Yahoo Finance otherwise. Quick analysis does not use this setting either.
+Whenever another source is in use, Yahoo Finance stays as the last fallback, so an empty result from one source never leaves the News analyst with no news at all. The Social sentiment analyst reads news from the same setting. The News card on the Analyze page does not follow this setting: it uses Alpaca when connected and Yahoo Finance otherwise. Quick analysis does not use this setting either.
 
 ---
 
 ## Alpha Vantage key (optional)
 
-**Settings → Data Providers** also has an **Alpha Vantage: API key** row, with a **Get a free key** button that opens Alpha Vantage's signup in a separate window inside the app and saves the key it issues. The key is optional: every analyst runs on free data without it.
+**Settings → Data Providers** also has an **Alpha Vantage: API key** row, with a **Get a key** button that opens Alpha Vantage's signup in a separate window inside the app and saves the key it issues, and a **See paid plans** link that opens Alpha Vantage's plans page in your browser. The key is optional: every analyst runs on free data without it.
+
+What a key covers depends on your Alpha Vantage plan:
+
+| Data | Free Alpha Vantage key | Paid Alpha Vantage plan |
+|---|---|---|
+| Income statement, balance sheet, cash flow | Yes | Yes |
+| Company overview (valuation ratios, market cap) | No, comes from Yahoo Finance | Yes |
+| News with sentiment | No, comes from Alpaca or Yahoo Finance | Yes |
 
 With a key saved, two settings under **Settings → Analysis** can use it in a Full analysis:
 
 - **News source → Alpha Vantage**: the News and Social sentiment analysts read Alpha Vantage news.
-- **Fundamentals source → Alpha Vantage**: the Fundamentals analyst reads the company overview, the income statement, balance sheet and cash flow from Alpha Vantage. The default is Yahoo Finance.
+- **Fundamentals source → Alpha Vantage**: the Fundamentals analyst reads the income statement, balance sheet and cash flow from Alpha Vantage, and the company overview too on a paid plan. The default is Yahoo Finance.
 
-Prices and technical indicators always come from Yahoo Finance. Alpha Vantage's free key has a small daily request limit. When it is reached, or the key is rejected, the run switches to Yahoo Finance for the rest of that data instead of failing. If Alpha Vantage has no data for a symbol (for example the company overview of an ETF), that request also uses Yahoo Finance. If you delete the key, runs use Yahoo Finance even if a setting still names Alpha Vantage. Alpha Vantage news items are longer than Yahoo's, so a run that reads them uses more model tokens and costs more. Quick analysis does not use these settings.
+Prices and technical indicators always come from Yahoo Finance. When Alpha Vantage refuses a request (data your plan does not include, a reached limit, or a rejected key), that request uses the fallback instead of failing the run: Alpaca when connected, then Yahoo Finance for news, and Yahoo Finance for fundamentals. If Alpha Vantage has no data for a symbol (for example the company overview of an ETF), that request also uses Yahoo Finance. If you delete the key, runs use the free sources even if a setting still names Alpha Vantage. Alpha Vantage news items are longer than Yahoo's, so a run that reads them uses more model tokens and costs more. Quick analysis does not use these settings.
 
 The key is stored in the encrypted credential store like your other keys and is sent only to Alpha Vantage.
 
